@@ -27,8 +27,8 @@ As outlined in this document, to register your application and add the app's reg
 - Under Client secrets, select New client secret, enter a name, and then select Add. Record the value which will be the "Client Secret" in a safe location for use in a later step. NOTE: Do no copy the "Secredt ID" as this is not needed.
 - Under Manage, select API Permissions > Add a permission. Select Microsoft Graph.
 - Select Application permissions.
-- Under User node, select User.Read.All, then select Add permissions.
-- If you notice that "Grant Admin Consent" is required, enable this now.
+- Under User node, select User.Read.All as well as Site.Read.All, then select Add permissions.
+- If you notice that "Grant Admin Consent" is required, enable this now. Make sure all permissions have been granted admin consent. If you require an Admin, please see this [document](https://learn.microsoft.com/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python) for additional help.
 - Click "Overview" and copy the "Application (client) ID" as well as the "Directory (tenant) ID"
 
 ## Edit Config
