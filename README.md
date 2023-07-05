@@ -14,19 +14,29 @@ This API was chosen because it allow near real time access to content that has c
 
 At this point, you should have a SharePoint Online site that has one or more documents that will need to be indexed. It is highly recommended that you review this [entire document](https://learn.microsoft.com/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python) so you can get a good idea on how authentication works.
 
-### Register Application
+## Register Application
 As outlined in this document, to register your application and add the app's registration information to your solution manually, follow these steps:
 
-- Sign in to the [Azure portal](https://portal.azure.com/).
+- Sign in to the [Azure portal](https://portal.azure.com/) as the Admin you copied from above/
 - If you have access to multiple tenants, use the Directories + subscriptions filter  in the top menu to switch to the tenant in which you want to register the application.
 - Search for and select Azure Active Directory.
 - Under Manage, select App registrations > New registration.
-- Enter a Name for your application, for example <code>Daemon-console</code>. Users of your app might see this name, and you can change it later.
+- Enter a Name for your application, for example <code>sharepoint-cog-search-indexing</code>. Users of your app might see this name, and you can change it later.
 - Select Register.
 - Under Manage, select Certificates & secrets.
-- Under Client secrets, select New client secret, enter a name, and then select Add. Record the secret value in a safe location for use in a later step.
+- Under Client secrets, select New client secret, enter a name, and then select Add. Record the value which will be the "Client Secret" in a safe location for use in a later step. NOTE: Do no copy the "Secredt ID" as this is not needed.
 - Under Manage, select API Permissions > Add a permission. Select Microsoft Graph.
 - Select Application permissions.
 - Under User node, select User.Read.All, then select Add permissions.
+- If you notice that "Grant Admin Consent" is required, enable this now.
+- Click "Overview" and copy the "Application (client) ID" as well as the "Directory (tenant) ID"
 
+## Edit Config
 
+Open the config.json and update the following:
+
+* Update "authority" with the "Tenant Id" from the previous section. For example:  https://login.microsoftonline.com/0cd1a308-e7c6-48f6-a77e-31770e80bccd
+* Update the client_id with the Application (client) ID from the previous section
+* Update the secret with the Secret Value from the preview section
+
+Save the config.json file
