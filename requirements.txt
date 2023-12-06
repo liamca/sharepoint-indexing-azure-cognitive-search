@@ -1,3 +1,5 @@
 requests>=2,<3
 msal>=0.6.1,<2
 python-docx
+python-dotenv
+azure-search-documents
