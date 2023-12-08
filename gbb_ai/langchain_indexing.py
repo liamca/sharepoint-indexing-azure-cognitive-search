@@ -1,17 +1,14 @@
 import os
-from langchain.document_loaders import PyPDFLoader
 from typing import Dict, List, Optional, Union
 
 import nest_asyncio
 import openai
-from azure.search.documents.indexes.models import (
-    PrioritizedFields,
-    SemanticConfiguration,
-    SemanticField,
-    SemanticSettings,
-)
+from azure.search.documents.indexes.models import (PrioritizedFields,
+                                                   SemanticConfiguration,
+                                                   SemanticField,
+                                                   SemanticSettings)
 from dotenv import load_dotenv
-from langchain.document_loaders import WebBaseLoader
+from langchain.document_loaders import PyPDFLoader, WebBaseLoader
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores.azuresearch import AzureSearch
@@ -20,6 +17,7 @@ from utils.ml_logging import get_logger
 
 # Initialize logging
 logger = get_logger()
+
 
 class TextChunkingIndexing:
     """
@@ -242,18 +240,17 @@ class TextChunkingIndexing:
         documents = []
         if os.path.isdir(pdf_path):
             for file in os.listdir(pdf_path):
-                if file.endswith('.pdf'):
+                if file.endswith(".pdf"):
                     file_path = os.path.join(pdf_path, file)
                     loader = PyPDFLoader(file_path)
                     documents.extend(loader.load())
             return documents
-        elif os.path.isfile(pdf_path) and pdf_path.endswith('.pdf'):
+        elif os.path.isfile(pdf_path) and pdf_path.endswith(".pdf"):
             loader = PyPDFLoader(pdf_path)
             documents.extend(loader.load())
             return documents
         else:
             raise ValueError("Invalid path. Path should be a directory or a .pdf file.")
-
 
     def load_and_split_text_by_character_from_pdf(
         self,
@@ -278,12 +275,14 @@ class TextChunkingIndexing:
         """
         try:
             documents = self.read_and_load_pdfs(source)
-            text_splitter = CharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs)
+            text_splitter = CharacterTextSplitter(
+                chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs
+            )
             return text_splitter.split_documents(documents)
         except Exception as e:
             logger.error(f"Error in loading and splitting text: {e}")
             raise
-    
+
     def embed_and_index(self, texts: List[str]) -> None:
         """
         Embeds the given texts and indexes them in the configured vector store.
