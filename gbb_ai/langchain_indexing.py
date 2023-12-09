@@ -90,7 +90,7 @@ class TextChunkingIndexing:
         deployment: str,
         model_name: Optional[str] = "text-embedding-ada-002",
         openai_api_base: Optional[str] = None,
-        chunk_size: Optional[int] = 1,
+        chunk_size: Optional[int] = 1000,
     ) -> OpenAIEmbeddings:
         """
         Loads and returns an OpenAIEmbeddings object with the specified configuration.

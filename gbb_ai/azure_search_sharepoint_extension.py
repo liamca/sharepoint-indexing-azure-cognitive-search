@@ -7,7 +7,9 @@ from typing import Dict, List, Optional
 import jwt
 import msal
 import requests
-from docx import Document
+from docx import Document as DocxDocument
+from langchain.docstore.document import Document
+doc =  Document(page_content="text", metadata={"source": "local"})
 from dotenv import load_dotenv
 from msal.application import ConfidentialClientApplication
 
@@ -26,6 +28,11 @@ clientSecret = os.getenv("CLIENT_SECRET")
 graphURI = "https://graph.microsoft.com"
 authority = "https://login.microsoftonline.com/" + tenantID
 scope = ["https://graph.microsoft.com/.default"]
+
+class CustomDocument:
+    def __init__(self, page_content, metadata=None):
+        self.page_content = page_content
+        self.metadata = metadata
 
 
 def msgraph_auth(
@@ -117,13 +124,10 @@ def get_site_id(site_domain: str, site_name: str, access_token: str) -> Optional
     try:
         logger.info("Getting the Site ID...")
         result = make_ms_graph_request(access_token, endpoint)
-        if result and result.status_code == 200:
-            site_id = result.get("id")
+        site_id = result.get("id")
+        if site_id:
             logger.info(f"Site ID retrieved: {site_id}")
             return site_id
-        else:
-            logger.error("Failed to retrieve Site ID")
-            return None
     except Exception as err:
         logger.error(f"Error retrieving Site ID: {err}")
         return None
@@ -230,8 +234,8 @@ def group_users_by_role(user_data: List[Dict]) -> str:
     """
     Group users by their roles and return a JSON string representing this grouping.
 
-    This function takes a list of user data dictionaries, each containing user ID, roles, and other attributes.
-    It returns a JSON string where the keys are roles and the values are lists of user IDs corresponding to each role.
+    This function takes a list of user data dictionaries, each containing user roles, and other attributes.
+    It returns a JSON string where the keys are roles and the values are lists of user display names corresponding to each role.
 
     :param user_data: List of dictionaries containing user data.
     :return: JSON string representing users grouped by their roles.
@@ -240,43 +244,20 @@ def group_users_by_role(user_data: List[Dict]) -> str:
     try:
         grouped_users = {}
         for user in user_data:
-            user_id = user.get("id")
-            roles = user.get("roles", [])
+            roles = user.get('roles', [])
+            display_name = user.get('grantedTo', {}).get('user', {}).get('displayName') or \
+                           user.get('grantedToV2', {}).get('siteGroup', {}).get('displayName') or \
+                           user.get('grantedToV2', {}).get('group', {}).get('displayName')
 
             for role in roles:
                 if role in grouped_users:
-                    grouped_users[role].append(user_id)
+                    grouped_users[role].append(display_name)
                 else:
-                    grouped_users[role] = [user_id]
+                    grouped_users[role] = [display_name]
 
         return json.dumps(grouped_users)
     except Exception as e:
         logger.error(f"Error processing user data: {e}")
-
-
-def get_docx_content(site_id: str, file_name: str, access_token: str) -> Optional[str]:
-    """
-    Retrieve the text content from a .docx file in a specific site drive.
-
-    :param site_id: The site ID in Microsoft Graph.
-    :param file_name: The name of the .docx file.
-    :param access_token: The access token for Microsoft Graph API authentication.
-    :return: Text content of the docx file or None if there's an error.
-    """
-    endpoint = (
-        f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:/{file_name}"
-    )
-    try:
-        logger.info(f"Making request for file content: {file_name}")
-        file_content_response = make_ms_graph_request(endpoint, access_token)
-        file_content = file_content_response.content
-
-        document = Document(io.BytesIO(file_content))
-        content = "\n".join([paragraph.text for paragraph in document.paragraphs])
-        return content
-    except Exception as err:
-        logger.error(f"Error retrieving content for {file_name}: {err}")
-        return None
 
 
 def get_docx_content(
@@ -307,7 +288,7 @@ def get_docx_content(
             return None
 
         file_content = response.content
-        document = Document(io.BytesIO(file_content))
+        document = DocxDocument(io.BytesIO(file_content))
         content = "\n".join([paragraph.text for paragraph in document.paragraphs])
 
         logger.info(f"Successfully retrieved content for file: {file_name}")
@@ -320,39 +301,51 @@ def get_docx_content(
         return None
 
 
-def main(access_token: str, site_id: str):
+def retrieve_sharepoint_files_content(site_domain: str, site_name: str, minutes_ago: Optional[int] = None, file_formats: Optional[List[str]] = None) -> Dict[str, Dict[str, Optional[str]]]:
     """
-    Main function to retrieve contents of all files from a specific SharePoint location.
+    Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
 
-    :param access_token: The access token for Microsoft Graph API authentication.
-    :param site_id: The site ID in Microsoft Graph.
+    :param site_domain: The domain of the site in Microsoft Graph.
+    :param site_name: The name of the site in Microsoft Graph.
+    :param minutes_ago: Optional; filter for files modified within the specified number of minutes.
+    :param file_formats: Optional; list of desired file formats to include.
+    :return: Dictionary with file names as keys and a dictionary containing their content, location, and users_by_role as values.
     """
     try:
-        clien_auth = msgraph_auth()
-        # Get the drive ID
-        drive_id = get_drive_id(clien_auth["access_token"], site_id)
+        client_auth = msgraph_auth(client_id=clientID, client_secret=clientSecret, authority=authority, scope=scope)
+        access_token = client_auth["access_token"]
+
+        site_id = get_site_id(site_domain, site_name, access_token)
+        if not site_id:
+            logger.error("Failed to retrieve site_id")
+            return None
+
+        drive_id = get_drive_id(access_token, site_id)
         if not drive_id:
             logger.error("Failed to retrieve drive ID")
             return None
 
-        # Get files in site
-        files = get_files_in_site(access_token, site_id, drive_id)
+        files = get_files_in_site(access_token, site_id, drive_id, minutes_ago, file_formats)
         if not files:
             logger.error("No files found in the site's drive")
             return None
 
-        # Process each file
-        file_contents = {}
+        file_contents = []
         for file in files:
             file_name = file.get("name")
-            if file_name and file_name.endswith(".docx"):
+            if file_name and (not file_formats or any(file_name.endswith(f'.{fmt}') for fmt in file_formats)):
                 logger.info(f"Fetching content for file: {file_name}")
                 content = get_docx_content(site_id, file_name, drive_id, access_token)
-                file_contents[file_name] = content or "Failed to retrieve content"
+                url_location = f'https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:/{file_name}:/content'
+                users_by_role = group_users_by_role(get_file_permissions(access_token, site_id, file["id"]))
+                file_content = Document(page_content=content, metadata={"source": url_location
+                    ,"read_access_group": users_by_role,
+                    "security_group": "group1"})
+                file_contents.append(file_content)
             else:
-                logger.info(f"Skipping non-docx file: {file_name}")
+                logger.info(f"Skipping file: {file_name}")
 
         return file_contents
     except Exception as e:
-        logger.error(f"Error in main function: {e}")
+        logger.error(f"Error in retrieve_sharepoint_files_content function: {e}")
         return None
