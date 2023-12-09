@@ -9,14 +9,15 @@ import msal
 import requests
 from docx import Document as DocxDocument
 from langchain.docstore.document import Document
-doc =  Document(page_content="text", metadata={"source": "local"})
 from dotenv import load_dotenv
 from msal.application import ConfidentialClientApplication
+from gbb_ai.azure_search_security_trimming import SecurityGroupManager
 
 # load logging
 from utils.ml_logging import get_logger
 
 logger = get_logger()
+manager_security = SecurityGroupManager()
 
 # Load .env file
 load_dotenv()
@@ -338,9 +339,11 @@ def retrieve_sharepoint_files_content(site_domain: str, site_name: str, minutes_
                 content = get_docx_content(site_id, file_name, drive_id, access_token)
                 url_location = f'https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:/{file_name}:/content'
                 users_by_role = group_users_by_role(get_file_permissions(access_token, site_id, file["id"]))
+                sec_group = manager_security.get_highest_priority_group(users_by_role)
+                print(f"sec_group: {sec_group}")
                 file_content = Document(page_content=content, metadata={"source": url_location
                     ,"read_access_group": users_by_role,
-                    "security_group": "group1"})
+                    "security_group": str(sec_group)})
                 file_contents.append(file_content)
             else:
                 logger.info(f"Skipping file: {file_name}")
