@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 import openai
 from azure.search.documents.indexes.models import (
-    SearchFieldDataType, SimpleField, SearchableField, SemanticSettings, SemanticConfiguration, PrioritizedFields, SemanticField
+    SearchFieldDataType, SearchField, SimpleField, SearchableField, SemanticSettings, SemanticConfiguration, PrioritizedFields, SemanticField
 )
 
 from dotenv import load_dotenv
@@ -48,9 +48,8 @@ class TextChunkingIndexing:
             "OPENAI_API_KEY",
             "OPENAI_ENDPOINT",
             "AZURE_OPENAI_API_VERSION",
-            "AZURE_SEARCH_SERVICE_ENDPOINT",
+            "AZURE_AI_SEARCH_SERVICE_ENDPOINT",
             "AZURE_SEARCH_ADMIN_KEY",
-            "AZURE_OPENAI_API_VERSION",
         ]
         env_vars: Dict[str, Optional[str]] = {
             var: os.getenv(var) for var in required_vars
@@ -138,7 +137,7 @@ class TextChunkingIndexing:
         :raises ValueError: If the endpoint or admin_key is missing.
         """
         # Default to environment variables if parameters are not provided
-        resolved_endpoint = endpoint or os.getenv("AZURE_SEARCH_SERVICE_ENDPOINT")
+        resolved_endpoint = endpoint or os.getenv("AZURE_AI_SEARCH_SERVICE_ENDPOINT")
         resolved_admin_key = admin_key or os.getenv("AZURE_SEARCH_ADMIN_KEY")
 
         # Validate that all required configurations are set
@@ -163,7 +162,7 @@ class TextChunkingIndexing:
         fields = [
             SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
             SearchableField(name="content", type=SearchFieldDataType.String, searchable=True),
-            SearchableField(
+            SearchField(
                 name="content_vector",
                 type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                 searchable=True,
@@ -172,7 +171,7 @@ class TextChunkingIndexing:
             ),
             SearchableField(name="metadata", type=SearchFieldDataType.String, searchable=True),
             SimpleField(name="source", type=SearchFieldDataType.String, filterable=True),
-            SimpleField(name="security_group", type=SearchFieldDataType.String, filterable=True),
+            SearchableField(name="security_group", type=SearchFieldDataType.String, filterable=True),
         ]
 
         self.vector_store = AzureSearch(
@@ -204,7 +203,7 @@ class TextChunkingIndexing:
         return self.vector_store
 
     @staticmethod
-    def split_documents_by_character(
+    def split_documents_in_chunks(
         documents: List[Document],
         chunk_size: Optional[int] = 1000,
         chunk_overlap: Optional[int] = 200,
@@ -214,8 +213,9 @@ class TextChunkingIndexing:
         **kwargs,
     ) -> List[str]:
         """
-        Splits text from a list of Document objects into chunks based on character count, with options for separator-based splitting.
-
+        Splits text from a list of Document objects into manageable chunks. This method primarily uses character 
+        count to determine chunk sizes but can also utilize separators for splitting.
+        
         :param documents: List of Document objects to split.
         :param chunk_size: (optional) The number of characters in each text chunk. Defaults to 1000.
         :param chunk_overlap: (optional) The number of characters to overlap between chunks. Defaults to 200.

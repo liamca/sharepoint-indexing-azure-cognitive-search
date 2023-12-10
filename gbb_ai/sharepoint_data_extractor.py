@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from msal.application import ConfidentialClientApplication
 from gbb_ai.azure_search_security_trimming import SecurityGroupManager
 
+
 # load logging
 from utils.ml_logging import get_logger
 
