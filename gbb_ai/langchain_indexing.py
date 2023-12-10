@@ -1,17 +1,16 @@
 import os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
-import nest_asyncio
 import openai
-from azure.search.documents.indexes.models import (PrioritizedFields,
-                                                   SemanticConfiguration,
-                                                   SemanticField,
-                                                   SemanticSettings)
+from azure.search.documents.indexes.models import (
+    SearchFieldDataType, SimpleField, SearchableField, SemanticSettings, SemanticConfiguration, PrioritizedFields, SemanticField
+)
+
 from dotenv import load_dotenv
-from langchain.document_loaders import PyPDFLoader, WebBaseLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
 from langchain.vectorstores.azuresearch import AzureSearch
+from langchain.docstore.document import Document
 
 from utils.ml_logging import get_logger
 
@@ -156,14 +155,32 @@ class TextChunkingIndexing:
             raise ValueError(
                 f"Missing required parameters: {', '.join(missing_params)}"
             )
+        
+        if not self.embeddings:
+            raise ValueError("OpenAIEmbeddings object has not been configured. Please call load_embedding_model() first.")
+        
 
-        # Create AzureSearch object with specified configuration
+        fields = [
+            SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
+            SearchableField(name="content", type=SearchFieldDataType.String, searchable=True),
+            SearchableField(
+                name="content_vector",
+                type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
+                searchable=True,
+                vector_search_dimensions=len(self.embeddings.embed_query("Text")), #TODO: review 
+                vector_search_configuration="default",
+            ),
+            SearchableField(name="metadata", type=SearchFieldDataType.String, searchable=True),
+            SimpleField(name="source", type=SearchFieldDataType.String, filterable=True),
+            SimpleField(name="security_group", type=SearchFieldDataType.String, filterable=True),
+        ]
+
         self.vector_store = AzureSearch(
             azure_search_endpoint=resolved_endpoint,
             azure_search_key=resolved_admin_key,
             index_name=index_name,
             embedding_function=self.embeddings.embed_query,
-            semantic_configuration_name="config",
+            fields=fields,
             semantic_settings=SemanticSettings(
                 default_configuration="config",
                 configurations=[
@@ -187,101 +204,45 @@ class TextChunkingIndexing:
         return self.vector_store
 
     @staticmethod
-    def scrape_web_text_and_split_by_character(
-        urls: List[str],
+    def split_documents_by_character(
+        documents: List[Document],
         chunk_size: Optional[int] = 1000,
         chunk_overlap: Optional[int] = 200,
+        separators: Optional[List[str]] = None,
+        keep_separator: bool = True,
+        is_separator_regex: bool = False,
         **kwargs,
     ) -> List[str]:
         """
-        Scrapes text from given URLs and splits it into chunks based on character count with additional customization.
+        Splits text from a list of Document objects into chunks based on character count, with options for separator-based splitting.
 
-        This function first scrapes text data from the provided URLs using WebBaseLoader.
-        It then splits the scraped text into chunks of a specified size with a specified overlap using CharacterTextSplitter.
-        Additional keyword arguments can be passed to the splitter for more customization.
-
-        :param urls: List of URLs to scrape text from.
+        :param documents: List of Document objects to split.
         :param chunk_size: (optional) The number of characters in each text chunk. Defaults to 1000.
         :param chunk_overlap: (optional) The number of characters to overlap between chunks. Defaults to 200.
-        :param kwargs: Additional keyword arguments to pass to the CharacterTextSplitter.
+        :param separators: (optional) List of strings or regex patterns to use as separators for splitting.
+        :param keep_separator: (optional) Whether to keep the separators in the resulting chunks. Defaults to True.
+        :param is_separator_regex: (optional) Treat the separators as regex patterns. Defaults to False.
+        :param kwargs: Additional keyword arguments for customization.
         :return: A list of text chunks.
-        :raises Exception: If an error occurs during scraping or splitting.
+        :raises Exception: If an error occurs during the text splitting process.
         """
+
         try:
-            nest_asyncio.apply()
-            loader = WebBaseLoader(urls)
-            scrape_data = loader.load()
-
-            splitter_settings = {
-                "chunk_size": chunk_size,
-                "chunk_overlap": chunk_overlap,
-            }
-            splitter_settings.update(kwargs)  # Merge additional keyword arguments
-
-            text_splitter = CharacterTextSplitter(**splitter_settings)
-            return text_splitter.split_documents(scrape_data)
+            # split documents into text and embeddings
+            text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, 
+            chunk_overlap=chunk_overlap,
+            separators=separators,
+            keep_separator=keep_separator,
+            is_separator_regex=is_separator_regex,
+            **kwargs
+            )
+            chunks = text_splitter.split_documents(documents)
+            return chunks
         except Exception as e:
             logger.error(f"Error in scraping and splitting text: {e}")
             raise
 
-    @staticmethod
-    def read_and_load_pdfs(pdf_path: str) -> List:
-        """
-        Reads and loads PDF files from a given path.
-
-        This function checks if the given path is a directory or a file.
-        If it's a directory, it goes through the directory and for each file that ends with '.pdf',
-        it reads the file, loads its content, and adds it to a list of documents.
-        If it's a file, it reads the file, loads its content, and returns a single Document object.
-
-        :param pdf_path: Path to the directory or file containing the PDF files.
-        :return: A single Document object if the path is a file, or a list of Document objects if the path is a directory.
-        """
-        documents = []
-        if os.path.isdir(pdf_path):
-            for file in os.listdir(pdf_path):
-                if file.endswith(".pdf"):
-                    file_path = os.path.join(pdf_path, file)
-                    loader = PyPDFLoader(file_path)
-                    documents.extend(loader.load())
-            return documents
-        elif os.path.isfile(pdf_path) and pdf_path.endswith(".pdf"):
-            loader = PyPDFLoader(pdf_path)
-            documents.extend(loader.load())
-            return documents
-        else:
-            raise ValueError("Invalid path. Path should be a directory or a .pdf file.")
-
-    def load_and_split_text_by_character_from_pdf(
-        self,
-        source: Union[str, List[str]],
-        chunk_size: int = 1000,
-        chunk_overlap: int = 0,
-        **kwargs,
-    ) -> List[str]:
-        """
-        Loads text from a file or a blob and splits it into chunks based on character count with additional customization.
-
-        This function can handle text data from a specified file path or directly from a text blob.
-        It then splits the loaded text into chunks of a specified size with a specified overlap using CharacterTextSplitter.
-        Additional keyword arguments can be passed to the splitter for more customization.
-
-        :param source: Path to the file or a blob containing the text.
-        :param chunk_size: (optional) The number of characters in each text chunk. Defaults to 1000.
-        :param chunk_overlap: (optional) The number of characters to overlap between chunks. Defaults to 0.
-        :param kwargs: Additional keyword arguments to pass to the CharacterTextSplitter.
-        :return: A list of text chunks.
-        :raises Exception: If an error occurs during loading or splitting.
-        """
-        try:
-            documents = self.read_and_load_pdfs(source)
-            text_splitter = CharacterTextSplitter(
-                chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs
-            )
-            return text_splitter.split_documents(documents)
-        except Exception as e:
-            logger.error(f"Error in loading and splitting text: {e}")
-            raise
 
     def embed_and_index(self, texts: List[str]) -> None:
         """
