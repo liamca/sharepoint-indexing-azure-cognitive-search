@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Union
 from azure.search.documents.models import Vector
 from azure.core.credentials import AzureKeyCredential
 from azure.search.documents import SearchClient
@@ -61,7 +61,7 @@ class AzureSearchManager:
             logger.error(f"Error in msgraph_auth: {err}")
             raise
 
-    def get_current_user_groups(self):
+    def get_current_user_groups(self, user_id: str = "4e6b32a4-9233-4256-8e97-94e5584c5886") -> List[str]:
         """
         Retrieve the groups of the current user from Azure AD.
         """
@@ -73,7 +73,7 @@ class AzureSearchManager:
             'Authorization': f'Bearer {self.token}',
             'Content-Type': 'application/json'
         }
-        endpoint = f"https://graph.microsoft.com/v1.0/groups"
+        endpoint = f"https://graph.microsoft.com/v1.0/users/{user_id}/memberOf"
 
         try:
             response = requests.get(endpoint, headers=headers)
@@ -81,21 +81,21 @@ class AzureSearchManager:
                 logger.error(f"Error retrieving user groups: {response.status_code} {response.reason}")
                 logger.error(f"Response content: {response.text}")
                 return []
-
             groups_data = response.json()
-            return [group['displayName'] for group in groups_data.get('value', []) if group['@odata.type'] == '#microsoft.graph.group']
+            group_names = [group['displayName'] for group in groups_data.get('value', []) if group['@odata.type'] == '#microsoft.graph.group']
+            return group_names
         except Exception as e:
             logger.error(f"Exception in retrieving user groups: {e}")
             return []
 
 
-    def secure_hybrid_search_rerank(self, search_query: str, security_group: str, azure_deployment_name: str = "foundational-ada", top_k: int = 5, semantic_configuration_name: str = "config") -> List[Dict]:
+    def secure_hybrid_search_rerank(self, search_query: str, security_group: Union[str, List[str]], azure_deployment_name: str = "foundational-ada", top_k: int = 5, semantic_configuration_name: str = "config") -> List[Dict]:
         """
         Executes a secure, hybrid search with reranking based on semantic analysis and security group filters.
 
         Parameters:
         - search_query (str): The search query text to execute.
-        - security_group (str): Security group name to filter the search results, ensuring data access control and relevance to the specified group.
+        - security_group (Union[str, List[str]]): Security group name(s) to filter the search results, ensuring data access control and relevance to the specified group(s).
         - azure_deployment_name (str, optional): The OpenAI deployment name used for semantic analysis. Defaults to "foundational-ada".
         - top_k (int, optional): The number of top results to retrieve and rerank. Defaults to 5.
         - semantic_configuration_name (str, optional): The semantic search configuration name to use. Defaults to "config".
@@ -103,9 +103,15 @@ class AzureSearchManager:
         Returns:
         - List[Dict]: A list of search results, each as a dictionary containing the score, reranker score, and content.
 
-        This function performs a semantic search using the specified query and Azure deployment. It filters results based on the given security group for enhanced data security and relevance. The top results are then reranked to present the most pertinent information.
+        This function performs a semantic search using the specified query and Azure deployment. It filters results based on the given security group(s) for enhanced data security and relevance. The top results are then reranked to present the most pertinent information.
         """
         try:
+            # Construct the filter using search.in function
+            if isinstance(security_group, list):
+                security_filter = f"search.in(security_group, '{','.join(security_group)}')"
+            else:
+                security_filter = f"search.in(security_group, '{security_group}')"
+
             # Fetch and filter search results based on security group
             results = self.search_client.search(
                 search_text=search_query,
@@ -114,7 +120,7 @@ class AzureSearchManager:
                 query_type="semantic",
                 semantic_configuration_name=semantic_configuration_name,
                 query_language="en-us",
-                filter=f"security_group eq '{security_group}'"
+                filter=security_filter
             )
 
             # Process and log the formatted results
