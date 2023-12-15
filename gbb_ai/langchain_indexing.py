@@ -2,15 +2,19 @@ import os
 from typing import Dict, List, Optional
 
 import openai
-from azure.search.documents.indexes.models import (
-    SearchFieldDataType, SearchField, SimpleField, SearchableField, SemanticSettings, SemanticConfiguration, PrioritizedFields, SemanticField
-)
-
+from azure.search.documents.indexes.models import (PrioritizedFields,
+                                                   SearchableField,
+                                                   SearchField,
+                                                   SearchFieldDataType,
+                                                   SemanticConfiguration,
+                                                   SemanticField,
+                                                   SemanticSettings,
+                                                   SimpleField)
 from dotenv import load_dotenv
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores.azuresearch import AzureSearch
 from langchain.docstore.document import Document
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.vectorstores.azuresearch import AzureSearch
 
 from utils.ml_logging import get_logger
 
@@ -154,24 +158,37 @@ class TextChunkingIndexing:
             raise ValueError(
                 f"Missing required parameters: {', '.join(missing_params)}"
             )
-        
+
         if not self.embeddings:
-            raise ValueError("OpenAIEmbeddings object has not been configured. Please call load_embedding_model() first.")
-        
+            raise ValueError(
+                "OpenAIEmbeddings object has not been configured. Please call load_embedding_model() first."
+            )
 
         fields = [
-            SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
-            SearchableField(name="content", type=SearchFieldDataType.String, searchable=True),
+            SimpleField(
+                name="id", type=SearchFieldDataType.String, key=True, filterable=True
+            ),
+            SearchableField(
+                name="content", type=SearchFieldDataType.String, searchable=True
+            ),
             SearchField(
                 name="content_vector",
                 type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                 searchable=True,
-                vector_search_dimensions=len(self.embeddings.embed_query("Text")), #TODO: review 
+                vector_search_dimensions=len(
+                    self.embeddings.embed_query("Text")
+                ),  # TODO: review
                 vector_search_configuration="default",
             ),
-            SearchableField(name="metadata", type=SearchFieldDataType.String, searchable=True),
-            SimpleField(name="source", type=SearchFieldDataType.String, filterable=True),
-            SearchableField(name="security_group", type=SearchFieldDataType.String, filterable=True),
+            SearchableField(
+                name="metadata", type=SearchFieldDataType.String, searchable=True
+            ),
+            SimpleField(
+                name="source", type=SearchFieldDataType.String, filterable=True
+            ),
+            SearchableField(
+                name="security_group", type=SearchFieldDataType.String, filterable=True
+            ),
         ]
 
         self.vector_store = AzureSearch(
@@ -213,9 +230,9 @@ class TextChunkingIndexing:
         **kwargs,
     ) -> List[str]:
         """
-        Splits text from a list of Document objects into manageable chunks. This method primarily uses character 
+        Splits text from a list of Document objects into manageable chunks. This method primarily uses character
         count to determine chunk sizes but can also utilize separators for splitting.
-        
+
         :param documents: List of Document objects to split.
         :param chunk_size: (optional) The number of characters in each text chunk. Defaults to 1000.
         :param chunk_overlap: (optional) The number of characters to overlap between chunks. Defaults to 200.
@@ -230,19 +247,18 @@ class TextChunkingIndexing:
         try:
             # split documents into text and embeddings
             text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap,
-            separators=separators,
-            keep_separator=keep_separator,
-            is_separator_regex=is_separator_regex,
-            **kwargs
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                separators=separators,
+                keep_separator=keep_separator,
+                is_separator_regex=is_separator_regex,
+                **kwargs,
             )
             chunks = text_splitter.split_documents(documents)
             return chunks
         except Exception as e:
             logger.error(f"Error in scraping and splitting text: {e}")
             raise
-
 
     def embed_and_index(self, texts: List[str]) -> None:
         """

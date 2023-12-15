@@ -1,9 +1,13 @@
-from typing import List
-from langchain.embeddings import OpenAIEmbeddings
 import os
-import openai
+from typing import List
 
-def get_embeddings(text: str, azure_deployment_name: str = "foundational-ada") -> List[float]:
+import openai
+from langchain.embeddings import OpenAIEmbeddings
+
+
+def get_embeddings(
+    text: str, azure_deployment_name: str = "foundational-ada"
+) -> List[float]:
     """
     Retrieve embeddings for the given text using OpenAI's embedding model.
 

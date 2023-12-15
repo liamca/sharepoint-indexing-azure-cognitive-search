@@ -1,97 +1,168 @@
 import io
-import json
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, Union, List, Optional, Any
 
-import jwt
 import msal
 import requests
 from docx import Document as DocxDocument
-from langchain.docstore.document import Document
 from dotenv import load_dotenv
+from langchain.docstore.document import Document
 from msal.application import ConfidentialClientApplication
+
 from gbb_ai.azure_search_security_trimming import SecurityGroupManager
-
-
 # load logging
 from utils.ml_logging import get_logger
 
 logger = get_logger()
 manager_security = SecurityGroupManager()
 
+
 class SharePointDataExtractor:
-    def __init__(self):
+    """This class facilitates the extraction of data from SharePoint using Microsoft Graph API.
+    It supports authentication and data retrieval from SharePoint sites, lists, and libraries.
+    """
+
+    def __init__(
+        self,
+        tenant_id: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        graph_uri: str = "https://graph.microsoft.com",
+        authority_template: str = "https://login.microsoftonline.com/{tenant_id}",
+    ):
+        """
+        Initialize the SharePointDataExtractor class with optional environment variables.
+
+        :param tenant_id: Tenant ID for Microsoft 365.
+        :param client_id: Client ID for the application registered in Azure AD.
+        :param client_secret: Client secret for the application registered in Azure AD.
+        :param graph_uri: URI for Microsoft Graph API.
+        :param authority_template: Template for authority URL used in authentication.
+        """
+        self.tenant_id = tenant_id
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.graph_uri = graph_uri
+        self.authority = (
+            authority_template.format(tenant_id=tenant_id) if tenant_id else None
+        )
+        self.scope = ["https://graph.microsoft.com/.default"]
+        self.access_token = None
+
+    def load_environment_variables_from_env_file(self):
+        """
+        Loads required environment variables for the application from a .env file.
+
+        This method should be called explicitly if environment variables are to be loaded from a .env file.
+        """
         load_dotenv()
+
         self.tenant_id = os.getenv("TENANT_ID")
         self.client_id = os.getenv("CLIENT_ID")
         self.client_secret = os.getenv("CLIENT_SECRET")
-        self.graph_uri = "https://graph.microsoft.com"
         self.authority = f"https://login.microsoftonline.com/{self.tenant_id}"
-        self.scope = ["https://graph.microsoft.com/.default"]
 
-    @staticmethod
+        # Check for any missing required environment variables
+        missing_vars = [
+            var_name
+            for var_name, var in [
+                ("TENANT_ID", self.tenant_id),
+                ("CLIENT_ID", self.client_id),
+                ("CLIENT_SECRET", self.client_secret),
+            ]
+            if not var
+        ]
+
+        if missing_vars:
+            raise EnvironmentError(
+                f"Missing required environment variables: {', '.join(missing_vars)}"
+            )
+
+        # Log the success of loading each environment variable
+        loaded_vars = [
+            var_name
+            for var_name in ["TENANT_ID", "CLIENT_ID", "CLIENT_SECRET"]
+            if var_name not in missing_vars
+        ]
+        if loaded_vars:
+            logger.info(
+                f"Successfully loaded environment variables: {', '.join(loaded_vars)}"
+            )
+
     def msgraph_auth(
-        client_id: str, client_secret: str, authority: str, scope: list
-    ) -> ConfidentialClientApplication:
+        self,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+        authority: Optional[str] = None,
+    ):
         """
         Authenticate with Microsoft Graph using MSAL for Python.
-
-        This function authenticates with Microsoft Graph using the MSAL library. It attempts to acquire a token silently,
-        and if that fails, it tries to acquire a new token. It decodes and prints the acquired access token and its expiry time.
-
-        :param client_id: The application (client) ID of your Azure AD app registration.
-        :param client_secret: The client secret for your Azure AD app registration.
-        :param authority: The authority URL for your Azure AD tenant.
-        :param scope: Scopes required for the token.
-        :return: A dictionary with the access token and its expiry time if successful, None otherwise.
-        :raises Exception: If there are issues in acquiring or decoding the token.
         """
+        # Use provided parameters or fall back to instance attributes
+        client_id = client_id or self.client_id
+        client_secret = client_secret or self.client_secret
+        authority = authority or self.authority
+
+        # Check if all necessary credentials are provided
+        if not all([client_id, client_secret, authority]):
+            raise ValueError("Missing required authentication credentials.")
+
         app = msal.ConfidentialClientApplication(
             client_id=client_id, authority=authority, client_credential=client_secret
         )
 
         try:
-            access_token = app.acquire_token_silent(scope, account=None)
+            # Attempt to acquire token
+            access_token = app.acquire_token_silent(self.scope, account=None)
             if not access_token:
-                access_token = app.acquire_token_for_client(scopes=scope)
+                access_token = app.acquire_token_for_client(scopes=self.scope)
                 if "access_token" in access_token:
-                    logger.info("New access token retrieved....")
+                    logger.info("New access token retrieved.")
                 else:
-                    logger.error(
-                        "Error acquiring authorization token. Check your tenantID, clientID, and clientSecret."
-                    )
+                    logger.error("Error acquiring authorization token.")
                     return None
             else:
-                logger.info("Token retrieved from MSAL Cache....")
+                logger.info("Token retrieved from MSAL Cache.")
 
-            algorithms = ["RS256"]
-            decoded_access_token = jwt.decode(
-                access_token["access_token"],
-                algorithms=algorithms,
-                options={"verify_signature": False},
-            )
-            access_token_formatted = json.dumps(decoded_access_token, indent=2)
-            logger.info("Decoded Access Token:\n%s", access_token_formatted)
+            # Store the access token in the instance
+            self.access_token = access_token["access_token"]
+            return self.access_token
 
-            # Token Expiry
-            token_expiry = datetime.fromtimestamp(int(decoded_access_token["exp"]))
-            logger.info("Token Expires at: %s", str(token_expiry))
-            return access_token
         except Exception as err:
-            logger.error("Error in msgraph_auth: %s", str(err))
+            logger.error(f"Error in msgraph_auth: {err}")
             raise
 
     @staticmethod
-    def make_ms_graph_request(access_token: str, url: str) -> Dict:
+    def _format_url(site_id: str, drive_id: str, folder_path: str = None) -> str:
+        """
+        Formats the URL for accessing a nested site drive in Microsoft Graph.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :param drive_id: The drive ID in Microsoft Graph.
+        :param folder_path: path to the folder within the drive, can include subfolders. 
+            The format should follow '/folder/subfolder1/subfolder2/'. For example, 
+            '/test/test1/test2/' to access nested folders.
+        :return: The formatted URL.
+        """
+        folder_path_formatted = folder_path.rstrip("/")
+        return f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}:/"
+
+    def _make_ms_graph_request(
+        self, url: str, access_token: Optional[str] = None
+    ) -> Dict:
         """
         Make a request to the Microsoft Graph API.
 
-        :param access_token: The access token for Microsoft Graph API authentication.
         :param url: The URL for the Microsoft Graph API endpoint.
+        :param access_token: Optional; The access token for Microsoft Graph API authentication. If not provided, uses the instance's stored token.
         :return: The JSON response from the Microsoft Graph API.
         :raises Exception: If there's an HTTP error or other issues in making the request.
         """
+        access_token = access_token or self.access_token
+        if not access_token:
+            raise ValueError("Access token is required for making API requests.")
+
         headers = {"Authorization": f"Bearer {access_token}"}
         try:
             response = requests.get(url, headers=headers)
@@ -101,25 +172,23 @@ class SharePointDataExtractor:
             logger.error(f"HTTP Error: {err}")
             raise
         except Exception as err:
-            logger.error(f"Error in make_ms_graph_request: {err}")
+            logger.error(f"Error in _make_ms_graph_request: {err}")
             raise
 
-
-    def get_site_id(self, site_domain: str, site_name: str, access_token: str) -> Optional[str]:
+    def get_site_id(
+        self, site_domain: str, site_name: str, access_token: Optional[str] = None
+    ) -> Optional[str]:
         """
         Get the Site ID from Microsoft Graph API.
-
-        :param site_domain: The domain of the site in Microsoft Graph.
-        :param site_name: The name of the site in Microsoft Graph.
-        :param access_token: The access token for Microsoft Graph API authentication.
-        :return: The Site ID or None if there's an error.
         """
         endpoint = (
             f"https://graph.microsoft.com/v1.0/sites/{site_domain}:/sites/{site_name}:/"
         )
+        access_token = access_token or self.access_token
+
         try:
             logger.info("Getting the Site ID...")
-            result = self.make_ms_graph_request(access_token, endpoint)
+            result = self._make_ms_graph_request(endpoint, access_token)
             site_id = result.get("id")
             if site_id:
                 logger.info(f"Site ID retrieved: {site_id}")
@@ -128,47 +197,58 @@ class SharePointDataExtractor:
             logger.error(f"Error retrieving Site ID: {err}")
             return None
 
-
-    def get_drive_id(self, access_token: str, site_id: str) -> str:
+    def get_drive_id(self, site_id: str, access_token: Optional[str] = None) -> str:
         """
         Get the drive ID from a Microsoft Graph site.
-
-        :param access_token: The access token for Microsoft Graph API authentication.
-        :param site_id: The site ID in Microsoft Graph.
-        :return: The drive ID.
-        :raises Exception: If there's an error in fetching the drive ID.
         """
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive"
+        
+        access_token = access_token or self.access_token
+
         try:
-            json_response = self.make_ms_graph_request(access_token, url)
-            return json_response["id"]
+            json_response = self._make_ms_graph_request(url, access_token)
+            drive_id = json_response.get("id")
+            logger.info(f"Successfully retrieved drive ID: {drive_id}")
+            return drive_id
         except Exception as err:
             logger.error(f"Error in get_drive_id: {err}")
             raise
 
-
-    def get_files_in_site(self,
-        access_token: str,
+    def get_files_in_site(
+        self,
         site_id: str,
         drive_id: str,
+        folder_path: Optional[str] = None,
+        access_token: Optional[str] = None,
         minutes_ago: Optional[int] = None,
         file_formats: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Get a list of files in a site's drive, optionally filtered by creation or last modification time and file formats.
 
-        :param access_token: The access token for Microsoft Graph API authentication.
         :param site_id: The site ID in Microsoft Graph.
         :param drive_id: The drive ID in Microsoft Graph.
-        :param minutes_ago: Optional integer to filter files created or updated within the specified number of minutes from now. If None, no time-based filtering is applied.
+        :param folder_path: Path to the folder within the drive, can include subfolders. 
+                The format should follow '/folder/subfolder1/subfolder2/'.For example, 
+                '/test/test1/test2/' to access nested folders.        
+        :param access_token: The access token for Microsoft Graph API authentication. If not provided, it will be fetched from self.
+        :param minutes_ago: Optional integer to filter files created or updated within the specified number of minutes from now.
         :param file_formats: List of desired file formats.
         :return: A list of file details.
         :raises Exception: If there's an error in fetching file details.
         """
-        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
+        if access_token is None:
+            access_token = self.access_token
+
+        # Construct the URL based on whether a folder path is provided
+        if folder_path:
+           url = self._format_url(site_id, drive_id, folder_path) + "children"
+        else: 
+           url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root/children"
+        
         try:
             logger.info("Making request to Microsoft Graph API")
-            json_response = self.make_ms_graph_request(access_token, url)
+            json_response = self._make_ms_graph_request(url, access_token)
             files = json_response["value"]
             logger.info("Received response from Microsoft Graph API")
 
@@ -205,20 +285,25 @@ class SharePointDataExtractor:
             logger.error(f"Error in get_files_in_site: {err}")
             raise
 
-    def get_file_permissions(self, access_token: str, site_id: str, item_id: str) -> List[Dict]:
+    def get_file_permissions(
+        self, site_id: str, item_id: str, access_token: Optional[str] = None
+    ) -> List[Dict]:
         """
         Get the permissions of a file in a site.
 
-        :param access_token: The access token for Microsoft Graph API authentication.
         :param site_id: The site ID in Microsoft Graph.
         :param item_id: The item ID of the file in Microsoft Graph.
+        :param access_token: The access token for Microsoft Graph API authentication. If not provided, it will be fetched from self.
         :return: A list of permission details.
         :raises Exception: If there's an error in fetching permission details.
         """
+        if access_token is None:
+            access_token = self.access_token
+
         url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/items/{item_id}/permissions"
 
         try:
-            json_response = self.make_ms_graph_request(access_token, url)
+            json_response = self._make_ms_graph_request(url, access_token)
             return json_response["value"]
         except Exception as err:
             logger.error(f"Error in get_file_permissions: {err}")
@@ -239,10 +324,14 @@ class SharePointDataExtractor:
         try:
             grouped_users = {}
             for user in user_data:
-                roles = user.get('roles', [])
-                display_name = user.get('grantedTo', {}).get('user', {}).get('displayName') or \
-                            user.get('grantedToV2', {}).get('siteGroup', {}).get('displayName') or \
-                            user.get('grantedToV2', {}).get('group', {}).get('displayName')
+                roles = user.get("roles", [])
+                display_name = (
+                    user.get("grantedTo", {}).get("user", {}).get("displayName")
+                    or user.get("grantedToV2", {})
+                    .get("siteGroup", {})
+                    .get("displayName")
+                    or user.get("grantedToV2", {}).get("group", {}).get("displayName")
+                )
 
                 for role in roles:
                     grouped_users.setdefault(role, []).append(display_name)
@@ -252,99 +341,214 @@ class SharePointDataExtractor:
             logger.error(f"Error processing user data: {e}")
             raise
 
-
-    @staticmethod
-    def get_docx_content(
-        site_id: str, file_name: str, drive_id: str, access_token: str
-    ) -> Optional[str]:
+    def get_file_content_bytes(
+        self,
+        site_id: str,
+        drive_id: str,
+        folder_path: Optional[str],
+        file_name: str,
+        specific_file: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ) -> Optional[bytes]:
         """
-        Retrieve the text content from a .docx file in a specific site drive.
+        Retrieve the content of a file as bytes from a specific site drive.
 
         :param site_id: The site ID in Microsoft Graph.
-        :param file_name: The name of the .docx file.
         :param drive_id: The drive ID in Microsoft Graph.
+        :param folder_path: Path to the folder within the drive, can include subfolders.
+        :param file_name: The name of the file.
+        :param specific_file: Specific file name, if different from file_name.
         :param access_token: The access token for Microsoft Graph API authentication.
-        :return: Text content of the docx file or None if there's an error.
+        :return: Bytes content of the file or None if there's an error.
         """
+        if access_token is None:
+            access_token = self.access_token
 
-        endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:/{file_name}:/content"
+        target_file = specific_file if specific_file else file_name
+        folder_path_formatted = folder_path.rstrip("/") if folder_path else ""
+        endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}/{target_file}:/content"
+
         try:
-            logger.info(f"Starting request for file: {file_name}")
-            response = requests.get(
-                endpoint, headers={"Authorization": "Bearer " + access_token}
-            )
-
-            # Log different outcomes of the response
+            response = requests.get(endpoint, headers={"Authorization": "Bearer " + access_token})
             if response.status_code != 200:
-                logger.error(
-                    f"Failed to retrieve file content. Status code: {response.status_code}, Response: {response.text}"
-                )
+                logger.error(f"Failed to retrieve file content. Status code: {response.status_code}, Response: {response.text}")
                 return None
-
-            file_content = response.content
-            document = DocxDocument(io.BytesIO(file_content))
-            content = "\n".join([paragraph.text for paragraph in document.paragraphs])
-
-            logger.info(f"Successfully retrieved content for file: {file_name}")
-            return content
+            return response.content
         except requests.exceptions.RequestException as req_err:
-            logger.error(f"Request error retrieving content for {file_name}: {req_err}")
+            logger.error(f"Request error: {req_err}")
             return None
+        
+    def process_and_retrieve_docx_content(
+        self,
+        site_id: str,
+        drive_id: str,
+        folder_path: Optional[str],
+        file_name: str,
+        specific_file: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Process the content of a .docx file and extract its text.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :param drive_id: The drive ID in Microsoft Graph.
+        :param folder_path: Path to the folder within the drive, can include subfolders.
+        :param file_name: The name of the .docx file.
+        :param specific_file: Specific .docx file name, if different from file_name.
+        :param access_token: The access token for Microsoft Graph API authentication.
+        :return: Text content of the .docx file or None if there's an error.
+        """
+        file_bytes = self.get_file_content_bytes(site_id, drive_id, folder_path, file_name, specific_file, access_token)
+        if file_bytes is None:
+            return None
+
+        if not file_name.endswith('.docx'):
+            logger.error(f"File {file_name} is not a .docx file.")
+            return None
+
+        try:
+            document = DocxDocument(io.BytesIO(file_bytes))
+            return "\n".join([paragraph.text for paragraph in document.paragraphs])
         except Exception as err:
-            logger.error(f"General error retrieving content for {file_name}: {err}")
+            logger.error(f"Error processing document: {err}")
             return None
 
+    
+    @staticmethod
+    def _extract_file_metadata(file_data: Dict[str, Any]) -> Dict[str, Optional[Union[str, datetime]]]:
+        """
+        Extracts specific information from the file data.
 
-    def retrieve_sharepoint_files_content(self, site_domain: str, site_name: str, minutes_ago: Optional[int] = None, file_formats: Optional[List[str]] = None) -> Dict[str, Dict[str, Optional[str]]]:
+        This function takes a dictionary containing file data and returns a new dictionary 
+        with specific fields: 'webUrl', 'size', 'createdBy', 'createdDateTime', 
+        'lastModifiedDateTime', and 'lastModifiedBy'.
+
+        Args:
+            file_data (Dict[str, Any]): The original file data.
+
+        Returns:
+            Dict[str, Optional[Union[str, datetime]]]: A dictionary with the extracted file information. 
+            If a field is not present in the file data, the function will return None for that field.
+        """
+        return {
+            'webUrl': file_data.get('webUrl'),
+            'size': file_data.get('size'),
+            'createdBy': file_data.get('createdBy', {}).get('user', {}).get('displayName'),
+            'createdDateTime': file_data.get('fileSystemInfo', {}).get('createdDateTime', '').rstrip('Z') if file_data.get('fileSystemInfo', {}).get('createdDateTime') else None,
+            'lastModifiedDateTime': file_data.get('fileSystemInfo', {}).get('lastModifiedDateTime', '').rstrip('Z') if file_data.get('fileSystemInfo', {}).get('lastModifiedDateTime') else None,
+            'lastModifiedBy': file_data.get('lastModifiedBy', {}).get('user', {}).get('displayName'),
+        }
+
+    def retrieve_sharepoint_files_content(
+        self,
+        site_domain: str,
+        site_name: str,
+        folder_path: Optional[str] = None,
+        specific_file: Optional[str] = None,
+        minutes_ago: Optional[int] = None,
+        file_formats: Optional[List[str]] = None,
+    ) -> Dict[str, Dict[str, Optional[str]]]:
         """
         Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
 
         :param site_domain: The domain of the site in Microsoft Graph.
         :param site_name: The name of the site in Microsoft Graph.
+        :param folder_path: Path to the folder within the drive, can include subfolders like 'test1/test2'.
+        :param specific_file: Optional; the name of a specific file to retrieve. If provided, only this file's content will be fetched.
         :param minutes_ago: Optional; filter for files modified within the specified number of minutes.
         :param file_formats: Optional; list of desired file formats to include.
         :return: Dictionary with file names as keys and a dictionary containing their content, location, and users_by_role as values.
+         Example:
+        - To list files in the top-level folder: get_files_in_site(site_id, drive_id)
+        - To list files in a single folder: get_files_in_site(site_id, drive_id, '/test/')
+        - To list files in a nested folder: get_files_in_site(site_id, drive_id, '/test/test1/test2/')
         """
         # Check if all necessary instance variables are loaded
-        if not all([self.tenant_id, self.client_id, self.client_secret, self.graph_uri, self.authority, self.scope]):
-            logger.error("Required instance variables for SharePointDataExtractor are not set")
+        required_vars = {
+            "tenant_id": self.tenant_id,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "graph_uri": self.graph_uri,
+            "authority": self.authority,
+        }
+
+        missing_vars = [var_name for var_name, var in required_vars.items() if not var]
+
+        if missing_vars:
+            logger.error(
+                f"Required instance variables for SharePointDataExtractor are not set: {', '.join(missing_vars)}. Please load load_environment_variables_from_env_file or set them manually."
+            )
             return None
         try:
-            client_auth = self.msgraph_auth(client_id=self.client_id, client_secret=self.client_secret, authority=self.authority, scope=self.scope)
-            access_token = client_auth["access_token"]
-
-            site_id = self.get_site_id(site_domain, site_name, access_token)
+            if not self.access_token:
+                self.access_token = self.msgraph_auth(
+                    client_id=self.client_id,
+                    client_secret=self.client_secret,
+                    authority=self.authority,
+                )
+            site_id = self.get_site_id(site_domain, site_name)
             if not site_id:
                 logger.error("Failed to retrieve site_id")
                 return None
 
-            drive_id = self.get_drive_id(access_token, site_id)
+            drive_id = self.get_drive_id(site_id)
             if not drive_id:
                 logger.error("Failed to retrieve drive ID")
                 return None
-
-            files = self.get_files_in_site(access_token, site_id, drive_id, minutes_ago, file_formats)
+            
+            files = (
+                self.get_files_in_site(
+                    site_id=site_id,
+                    drive_id=drive_id,
+                    folder_path=folder_path,
+                    minutes_ago=minutes_ago,
+                    file_formats=file_formats,
+                )
+            )
             if not files:
                 logger.error("No files found in the site's drive")
                 return None
-
+            
             file_contents = []
             for file in files:
                 file_name = file.get("name")
-                if file_name and (not file_formats or any(file_name.endswith(f'.{fmt}') for fmt in file_formats)):
-                    logger.info(f"Fetching content for file: {file_name}")
-                    content = self.get_docx_content(site_id, file_name, drive_id, access_token)
-                    url_location = f'https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:/{file_name}:/content'
-                    users_by_role = self.group_users_by_role(self.get_file_permissions(access_token, site_id, file["id"]))
-                    sec_group = SecurityGroupManager().get_highest_priority_group(users_by_role)
-                    file_content = Document(page_content=content, metadata={"source": url_location
-                        ,"read_access_group": users_by_role,
-                        "security_group": sec_group})
+                metadata = self._extract_file_metadata(file)
+                if file_name and '.' in file_name and (
+                    not file_formats or any(file_name.endswith(f".{fmt}") for fmt in file_formats)
+                    ):
+                    content = None
+                    if file_name.endswith(".docx"):
+                        content = self.process_and_retrieve_docx_content(site_id, drive_id, folder_path, file_name)
+                    elif file_name.endswith(".pdf"):
+                        # TODO: Implement PDF content extraction
+                        pass
+                    users_by_role = self.group_users_by_role(
+                        self.get_file_permissions(
+                            site_id, file["id"]
+                        )
+                    )
+                    sec_group = SecurityGroupManager().get_highest_priority_group(
+                        users_by_role
+                    )
+                    file_content = {
+                        "page_content": content,
+                        "metadata": {
+                            "source": metadata["webUrl"],
+                            "file_name": file_name,
+                            "size": metadata["size"],
+                            "created_by": metadata["createdBy"],
+                            "created_datetime": metadata["createdDateTime"],
+                            "last_modified_datetime": metadata["lastModifiedDateTime"],
+                            "last_modified_by": metadata["lastModifiedBy"],
+                            "read_access_group": users_by_role,
+                            "security_group": sec_group,
+                        },
+                    }
                     file_contents.append(file_content)
-                else:
-                    logger.info(f"Skipping file: {file_name}")
-
             return file_contents
         except Exception as e:
             logger.error(f"Error in retrieve_sharepoint_files_content function: {e}")
             return None
+        
+
+   

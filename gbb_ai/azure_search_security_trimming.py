@@ -1,8 +1,10 @@
 from typing import Dict, List, Optional
+
 from utils.ml_logging import get_logger
 
 # Initialize logging
 logger = get_logger()
+
 
 class SecurityGroupManager:
     def __init__(self):
@@ -24,7 +26,9 @@ class SecurityGroupManager:
         self.group_mapping[customer_group] = security_group
         logger.info(f"Associated {customer_group} with {security_group}")
 
-    def get_highest_priority_group(self, users_by_role: Dict[str, List[str]]) -> Optional[str]:
+    def get_highest_priority_group(
+        self, users_by_role: Dict[str, List[str]]
+    ) -> Optional[str]:
         """
         Retrieve the highest priority security group based on the provided user roles.
 
@@ -34,7 +38,7 @@ class SecurityGroupManager:
         priority_order = ["Group_critical", "Group_medium", "Group_low"]
         found_groups = set()
 
-        for category in ['owner', 'read']:
+        for category in ["owner", "read"]:
             user_groups = users_by_role.get(category, [])
             for user_group in user_groups:
                 security_group = self.group_mapping.get(user_group)
@@ -47,5 +51,7 @@ class SecurityGroupManager:
                 logger.info(f"Returning highest priority group: {priority_group}")
                 return priority_group
 
-        logger.warning("No relevant security group found for the given user roles, defaulting to Group_medium")
-        return 'Group_medium'
+        logger.warning(
+            "No relevant security group found for the given user roles, defaulting to Group_medium"
+        )
+        return "Group_medium"

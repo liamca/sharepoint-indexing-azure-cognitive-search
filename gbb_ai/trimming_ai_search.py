@@ -1,26 +1,25 @@
-from typing import List, Dict, Union
-from azure.search.documents.models import Vector
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
-from azure.core.credentials import AzureKeyCredential
-from azure.search.documents import SearchClient
+import os
+from typing import Dict, List, Union
+
 import msal
 import requests
+from azure.core.credentials import AzureKeyCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.models import Vector
+
 from gbb_ai.utils import get_embeddings
-import os
-
-
 # load logging
 from utils.ml_logging import get_logger
 
 logger = get_logger()
+
 
 class AzureSearchManager:
     def __init__(self, index_name: str):
         self.search_client = SearchClient(
             endpoint=os.getenv("AZURE_AI_SEARCH_SERVICE_ENDPOINT"),
             index_name=index_name,
-            credential=AzureKeyCredential(os.getenv("AZURE_SEARCH_ADMIN_KEY"))
+            credential=AzureKeyCredential(os.getenv("AZURE_SEARCH_ADMIN_KEY")),
         )
 
         # Microsoft Graph API setup
@@ -33,10 +32,10 @@ class AzureSearchManager:
 
         # Authenticate with Microsoft Graph
         self.token = self.msgraph_auth(
-            client_id=self.client_id, 
-            client_secret=self.client_secret, 
-            authority=self.authority, 
-            scope=self.scope
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            authority=self.authority,
+            scope=self.scope,
         )
 
     @staticmethod
@@ -61,7 +60,9 @@ class AzureSearchManager:
             logger.error(f"Error in msgraph_auth: {err}")
             raise
 
-    def get_current_user_groups(self, user_id: str = "4e6b32a4-9233-4256-8e97-94e5584c5886") -> List[str]:
+    def get_current_user_groups(
+        self, user_id: str = "4e6b32a4-9233-4256-8e97-94e5584c5886"
+    ) -> List[str]:
         """
         Retrieve the groups of the current user from Azure AD.
         """
@@ -70,26 +71,38 @@ class AzureSearchManager:
             return []
 
         headers = {
-            'Authorization': f'Bearer {self.token}',
-            'Content-Type': 'application/json'
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type": "application/json",
         }
         endpoint = f"https://graph.microsoft.com/v1.0/users/{user_id}/memberOf"
 
         try:
             response = requests.get(endpoint, headers=headers)
             if response.status_code != 200:
-                logger.error(f"Error retrieving user groups: {response.status_code} {response.reason}")
+                logger.error(
+                    f"Error retrieving user groups: {response.status_code} {response.reason}"
+                )
                 logger.error(f"Response content: {response.text}")
                 return []
             groups_data = response.json()
-            group_names = [group['displayName'] for group in groups_data.get('value', []) if group['@odata.type'] == '#microsoft.graph.group']
+            group_names = [
+                group["displayName"]
+                for group in groups_data.get("value", [])
+                if group["@odata.type"] == "#microsoft.graph.group"
+            ]
             return group_names
         except Exception as e:
             logger.error(f"Exception in retrieving user groups: {e}")
             return []
 
-
-    def secure_hybrid_search_rerank(self, search_query: str, security_group: Union[str, List[str]], azure_deployment_name: str = "foundational-ada", top_k: int = 5, semantic_configuration_name: str = "config") -> List[Dict]:
+    def secure_hybrid_search_rerank(
+        self,
+        search_query: str,
+        security_group: Union[str, List[str]],
+        azure_deployment_name: str = "foundational-ada",
+        top_k: int = 5,
+        semantic_configuration_name: str = "config",
+    ) -> List[Dict]:
         """
         Executes a secure, hybrid search with reranking based on semantic analysis and security group filters.
 
@@ -108,7 +121,9 @@ class AzureSearchManager:
         try:
             # Construct the filter using search.in function
             if isinstance(security_group, list):
-                security_filter = f"search.in(security_group, '{','.join(security_group)}')"
+                security_filter = (
+                    f"search.in(security_group, '{','.join(security_group)}')"
+                )
             else:
                 security_filter = f"search.in(security_group, '{security_group}')"
 
@@ -116,16 +131,37 @@ class AzureSearchManager:
             results = self.search_client.search(
                 search_text=search_query,
                 top=top_k,
-                vectors=[Vector(value=get_embeddings(search_query, azure_deployment_name), k=50, fields="content_vector")],
+                vectors=[
+                    Vector(
+                        value=get_embeddings(search_query, azure_deployment_name),
+                        k=50,
+                        fields="content_vector",
+                    )
+                ],
                 query_type="semantic",
                 semantic_configuration_name=semantic_configuration_name,
                 query_language="en-us",
-                filter=security_filter
+                filter=security_filter,
             )
 
             # Process and log the formatted results
-            formatted_results = [{"score": doc['@search.score'], "reranker_score": doc['@search.reranker_score'], "content": doc["content"].replace("\n", " ")[:1000]} for doc in results]
-            logger.info("Search Results:\n" + "\n".join([f"Result {i}:\nScore: {result['score']}\nReranker Score: {result['reranker_score']}\nContent: {result['content']}\n{'-'*50}" for i, result in enumerate(formatted_results, 1)]))
+            formatted_results = [
+                {
+                    "score": doc["@search.score"],
+                    "reranker_score": doc["@search.reranker_score"],
+                    "content": doc["content"].replace("\n", " ")[:1000],
+                }
+                for doc in results
+            ]
+            logger.info(
+                "Search Results:\n"
+                + "\n".join(
+                    [
+                        f"Result {i}:\nScore: {result['score']}\nReranker Score: {result['reranker_score']}\nContent: {result['content']}\n{'-'*50}"
+                        for i, result in enumerate(formatted_results, 1)
+                    ]
+                )
+            )
 
             return [result["content"] for result in formatted_results]
         except Exception as e:
