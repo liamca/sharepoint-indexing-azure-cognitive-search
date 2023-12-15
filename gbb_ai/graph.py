@@ -2,15 +2,6 @@ from configparser import SectionProxy
 
 from azure.identity import DeviceCodeCredential
 from msgraph import GraphServiceClient
-from msgraph.generated.models.body_type import BodyType
-from msgraph.generated.models.email_address import EmailAddress
-from msgraph.generated.models.item_body import ItemBody
-from msgraph.generated.models.message import Message
-from msgraph.generated.models.recipient import Recipient
-from msgraph.generated.users.item.mail_folders.item.messages.messages_request_builder import \
-    MessagesRequestBuilder
-from msgraph.generated.users.item.send_mail.send_mail_post_request_body import \
-    SendMailPostRequestBody
 from msgraph.generated.users.item.user_item_request_builder import \
     UserItemRequestBuilder
 

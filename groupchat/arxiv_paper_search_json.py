@@ -1,5 +1,4 @@
 # filename: arxiv_paper_search_json.py
-import json
 
 import requests
 

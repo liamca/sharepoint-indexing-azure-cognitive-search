@@ -1,13 +1,7 @@
-from typing import List, Tuple, Optional
-import os
-from PyPDF2 import PdfReader
-import PyPDF2
 import io
-from azure.ai.formrecognizer import DocumentAnalysisClient, AnalyzedDocument
-from azure.core.credentials import AzureKeyCredential
+from typing import Optional
 
-
-from dotenv import load_dotenv
+import PyPDF2
 
 # load logging
 from utils.ml_logging import get_logger
@@ -24,13 +18,13 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> Optional[str]:
     """
     try:
         with io.BytesIO(pdf_bytes) as pdf_stream:
-            pdf_reader = PyPDF2.PdfReader (pdf_stream)
+            pdf_reader = PyPDF2.PdfReader(pdf_stream)
             text = []
             for page_num in range(len(pdf_reader.pages)):
                 page = pdf_reader.pages[page_num]
                 text.append(page.extract_text())
 
-            extracted_text = '\n'.join(text)
+            extracted_text = "\n".join(text)
             logger.info("Text extraction from PDF bytes was successful.")
             return extracted_text
     except Exception as e:

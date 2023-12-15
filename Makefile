@@ -12,3 +12,9 @@ endef
 create_conda_env:
 	$(call log_section, Creating Conda environment)
 	conda env create -f $(PWD)/environment.yml
+
+fix_code_quality:
+	# Automatic fixes for code quality
+	black .
+	isort .
+	ruff --fix .
