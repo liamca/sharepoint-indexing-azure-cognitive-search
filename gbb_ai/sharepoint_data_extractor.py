@@ -9,6 +9,7 @@ from docx import Document as DocxDocument
 from dotenv import load_dotenv
 from langchain.docstore.document import Document
 from msal.application import ConfidentialClientApplication
+from gbb_ai.pdf_utils import extract_text_from_pdf_bytes
 
 from gbb_ai.azure_search_security_trimming import SecurityGroupManager
 # load logging
@@ -347,7 +348,6 @@ class SharePointDataExtractor:
         drive_id: str,
         folder_path: Optional[str],
         file_name: str,
-        specific_file: Optional[str] = None,
         access_token: Optional[str] = None,
     ) -> Optional[bytes]:
         """
@@ -364,9 +364,8 @@ class SharePointDataExtractor:
         if access_token is None:
             access_token = self.access_token
 
-        target_file = specific_file if specific_file else file_name
         folder_path_formatted = folder_path.rstrip("/") if folder_path else ""
-        endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}/{target_file}:/content"
+        endpoint = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drives/{drive_id}/root:{folder_path_formatted}/{file_name}:/content"
 
         try:
             response = requests.get(endpoint, headers={"Authorization": "Bearer " + access_token})
@@ -384,7 +383,40 @@ class SharePointDataExtractor:
         drive_id: str,
         folder_path: Optional[str],
         file_name: str,
-        specific_file: Optional[str] = None,
+        access_token: Optional[str] = None,
+    ) -> Optional[str]:
+        """
+        Process the content of a .docx file and extract its text.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :param drive_id: The drive ID in Microsoft Graph.
+        :param folder_path: Path to the folder within the drive, can include subfolders.
+        :param file_name: The name of the .docx file.
+        :param access_token: The access token for Microsoft Graph API authentication.
+        :return: Text content of the .docx file or None if there's an error.
+        """
+        file_bytes = self.get_file_content_bytes(site_id, drive_id, folder_path, file_name, access_token)
+        if file_bytes is None:
+            return None
+
+        if not file_name.endswith('.docx'):
+            logger.error(f"File {file_name} is not a .docx file.")
+            return None
+
+        try:
+            document = DocxDocument(io.BytesIO(file_bytes))
+            return "\n".join([paragraph.text for paragraph in document.paragraphs])
+        except Exception as err:
+            logger.error(f"Error processing document: {err}")
+            return None
+        
+
+    def process_and_retrieve_pdf_content(
+        self,
+        site_id: str,
+        drive_id: str,
+        folder_path: Optional[str],
+        file_name: str,
         access_token: Optional[str] = None,
     ) -> Optional[str]:
         """
@@ -398,17 +430,17 @@ class SharePointDataExtractor:
         :param access_token: The access token for Microsoft Graph API authentication.
         :return: Text content of the .docx file or None if there's an error.
         """
-        file_bytes = self.get_file_content_bytes(site_id, drive_id, folder_path, file_name, specific_file, access_token)
+        file_bytes = self.get_file_content_bytes(site_id, drive_id, folder_path, file_name, access_token)
         if file_bytes is None:
             return None
 
-        if not file_name.endswith('.docx'):
-            logger.error(f"File {file_name} is not a .docx file.")
+        if not file_name.endswith('.pdf'):
+            logger.error(f"File {file_name} is not a .pdf file.")
             return None
 
         try:
-            document = DocxDocument(io.BytesIO(file_bytes))
-            return "\n".join([paragraph.text for paragraph in document.paragraphs])
+            document = extract_text_from_pdf_bytes(file_bytes)
+            return document
         except Exception as err:
             logger.error(f"Error processing document: {err}")
             return None
@@ -439,22 +471,165 @@ class SharePointDataExtractor:
             'lastModifiedBy': file_data.get('lastModifiedBy', {}).get('user', {}).get('displayName'),
         }
 
+    # def retrieve_sharepoint_files_content(
+    #     self,
+    #     site_domain: str,
+    #     site_name: str,
+    #     folder_path: Optional[str] = None,
+    #     file_name: Optional[str] = None,
+    #     minutes_ago: Optional[int] = None,
+    #     file_formats: Optional[List[str]] = None,
+    # ) -> Dict[str, Dict[str, Optional[str]]]:
+    #     """
+    #     Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
+
+    #     :param site_domain: The domain of the site in Microsoft Graph.
+    #     :param site_name: The name of the site in Microsoft Graph.
+    #     :param folder_path: Path to the folder within the drive, can include subfolders like 'test1/test2'.
+    #     :param file_name: Optional; the name of a specific file to retrieve. If provided, only this file's content will be fetched.
+    #     :param minutes_ago: Optional; filter for files modified within the specified number of minutes.
+    #     :param file_formats: Optional; list of desired file formats to include.
+    #     :return: Dictionary with file names as keys and a dictionary containing their content, location, and users_by_role as values.
+    #      Example:
+    #     - To list files in the top-level folder: get_files_in_site(site_id, drive_id)
+    #     - To list files in a single folder: get_files_in_site(site_id, drive_id, '/test/')
+    #     - To list files in a nested folder: get_files_in_site(site_id, drive_id, '/test/test1/test2/')
+    #     """
+    #     # Check if all necessary instance variables are loaded
+    #     required_vars = {
+    #         "tenant_id": self.tenant_id,
+    #         "client_id": self.client_id,
+    #         "client_secret": self.client_secret,
+    #         "graph_uri": self.graph_uri,
+    #         "authority": self.authority,
+    #     }
+
+    #     missing_vars = [var_name for var_name, var in required_vars.items() if not var]
+
+    #     if missing_vars:
+    #         logger.error(
+    #             f"Required instance variables for SharePointDataExtractor are not set: {', '.join(missing_vars)}. Please load load_environment_variables_from_env_file or set them manually."
+    #         )
+    #         return None
+    #     try:
+    #         if not self.access_token:
+    #             self.access_token = self.msgraph_auth(
+    #                 client_id=self.client_id,
+    #                 client_secret=self.client_secret,
+    #                 authority=self.authority,
+    #             )
+    #         site_id = self.get_site_id(site_domain, site_name)
+    #         if not site_id:
+    #             logger.error("Failed to retrieve site_id")
+    #             return None
+
+    #         drive_id = self.get_drive_id(site_id)
+    #         if not drive_id:
+    #             logger.error("Failed to retrieve drive ID")
+    #             return None
+            
+    #         files = (
+    #             self.get_files_in_site(
+    #                 site_id=site_id,
+    #                 drive_id=drive_id,
+    #                 folder_path=folder_path,
+    #                 minutes_ago=minutes_ago,
+    #                 file_formats=file_formats,
+    #             )
+    #         )
+    #         if not files:
+    #             logger.error("No files found in the site's drive")
+    #             return None
+            
+    #         file_contents = []
+            
+    #         if file_name: 
+    #             metadata = self._extract_file_metadata(file)
+    #             content = None
+    #             if file_name.endswith(".docx"):
+    #                 content = self.process_and_retrieve_docx_content(site_id, drive_id, folder_path, file_name)
+    #             elif file_name.endswith(".pdf"):
+    #                 content = self.process_and_retrieve_pdf_content(site_id, drive_id, folder_path, file_name)
+    #             users_by_role = self.group_users_by_role(
+    #                 self.get_file_permissions(
+    #                     site_id, file["id"]
+    #                 )
+    #             )
+    #             sec_group = SecurityGroupManager().get_highest_priority_group(
+    #                 users_by_role
+    #             )
+    #             file_content = {
+    #                 "page_content": content,
+    #                 "metadata": {
+    #                     "source": metadata["webUrl"],
+    #                     "file_name": file_name,
+    #                     "size": metadata["size"],
+    #                     "created_by": metadata["createdBy"],
+    #                     "created_datetime": metadata["createdDateTime"],
+    #                     "last_modified_datetime": metadata["lastModifiedDateTime"],
+    #                     "last_modified_by": metadata["lastModifiedBy"],
+    #                     "read_access_group": users_by_role,
+    #                     "security_group": sec_group,
+    #                 },
+    #             }
+    #             file_contents.append(file_content)
+            
+    #         else: 
+    #             for file in files:
+    #                 file_name = file.get("name")
+    #                 metadata = self._extract_file_metadata(file)
+    #                 if file_name and '.' in file_name and (
+    #                     not file_formats or any(file_name.endswith(f".{fmt}") for fmt in file_formats)
+    #                     ):
+    #                     content = None
+    #                     if file_name.endswith(".docx"):
+    #                         content = self.process_and_retrieve_docx_content(site_id, drive_id, folder_path, file_name)
+    #                     elif file_name.endswith(".pdf"):
+    #                         content = self.process_and_retrieve_pdf_content(site_id, drive_id, folder_path, file_name)
+    #                     users_by_role = self.group_users_by_role(
+    #                         self.get_file_permissions(
+    #                             site_id, file["id"]
+    #                         )
+    #                     )
+    #                     sec_group = SecurityGroupManager().get_highest_priority_group(
+    #                         users_by_role
+    #                     )
+    #                     file_content = {
+    #                         "page_content": content,
+    #                         "metadata": {
+    #                             "source": metadata["webUrl"],
+    #                             "file_name": file_name,
+    #                             "size": metadata["size"],
+    #                             "created_by": metadata["createdBy"],
+    #                             "created_datetime": metadata["createdDateTime"],
+    #                             "last_modified_datetime": metadata["lastModifiedDateTime"],
+    #                             "last_modified_by": metadata["lastModifiedBy"],
+    #                             "read_access_group": users_by_role,
+    #                             "security_group": sec_group,
+    #                         },
+    #                     }
+    #                     file_contents.append(file_content)
+    #         return file_contents
+    #     except Exception as e:
+    #         logger.error(f"Error in retrieve_sharepoint_files_content function: {e}")
+    #         return None
+        
     def retrieve_sharepoint_files_content(
-        self,
-        site_domain: str,
-        site_name: str,
-        folder_path: Optional[str] = None,
-        specific_file: Optional[str] = None,
-        minutes_ago: Optional[int] = None,
-        file_formats: Optional[List[str]] = None,
-    ) -> Dict[str, Dict[str, Optional[str]]]:
+            self,
+            site_domain: str,
+            site_name: str,
+            folder_path: Optional[str] = None,
+            file_name: Optional[str] = None,
+            minutes_ago: Optional[int] = None,
+            file_formats: Optional[List[str]] = None,
+        ) -> Dict[str, Dict[str, Optional[str]]]:
         """
         Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
 
         :param site_domain: The domain of the site in Microsoft Graph.
         :param site_name: The name of the site in Microsoft Graph.
         :param folder_path: Path to the folder within the drive, can include subfolders like 'test1/test2'.
-        :param specific_file: Optional; the name of a specific file to retrieve. If provided, only this file's content will be fetched.
+        :param file_name: Optional; the name of a specific file to retrieve. If provided, only this file's content will be fetched.
         :param minutes_ago: Optional; filter for files modified within the specified number of minutes.
         :param file_formats: Optional; list of desired file formats to include.
         :return: Dictionary with file names as keys and a dictionary containing their content, location, and users_by_role as values.
@@ -463,7 +638,30 @@ class SharePointDataExtractor:
         - To list files in a single folder: get_files_in_site(site_id, drive_id, '/test/')
         - To list files in a nested folder: get_files_in_site(site_id, drive_id, '/test/test1/test2/')
         """
-        # Check if all necessary instance variables are loaded
+        if self._are_required_variables_missing():
+            return None
+
+        site_id, drive_id = self._get_site_and_drive_ids(site_domain, site_name)
+        if not site_id or not drive_id:
+            return None
+
+        files = self._get_files(site_id, drive_id, folder_path, minutes_ago, file_formats, file_name)
+        if not files:
+            logger.error("No files found in the site's drive")
+            return None
+        
+        return self._process_files(site_id, drive_id, folder_path, files, file_formats)
+
+    def _are_required_variables_missing(self) -> bool:
+        """
+        Checks if any of the required instance variables for SharePointDataExtractor are missing.
+
+        This function checks the following instance variables: 'tenant_id', 'client_id', 
+        'client_secret', 'graph_uri', and 'authority'. If any of these variables are not set, 
+        the function logs an error message and returns True.
+
+        :return: True if any of the required instance variables are missing, False otherwise.
+        """
         required_vars = {
             "tenant_id": self.tenant_id,
             "client_id": self.client_id,
@@ -471,84 +669,126 @@ class SharePointDataExtractor:
             "graph_uri": self.graph_uri,
             "authority": self.authority,
         }
-
         missing_vars = [var_name for var_name, var in required_vars.items() if not var]
-
         if missing_vars:
             logger.error(
                 f"Required instance variables for SharePointDataExtractor are not set: {', '.join(missing_vars)}. Please load load_environment_variables_from_env_file or set them manually."
             )
-            return None
-        try:
-            if not self.access_token:
-                self.access_token = self.msgraph_auth(
-                    client_id=self.client_id,
-                    client_secret=self.client_secret,
-                    authority=self.authority,
-                )
-            site_id = self.get_site_id(site_domain, site_name)
-            if not site_id:
-                logger.error("Failed to retrieve site_id")
-                return None
+            return True
+        return False
 
-            drive_id = self.get_drive_id(site_id)
-            if not drive_id:
-                logger.error("Failed to retrieve drive ID")
-                return None
-            
-            files = (
-                self.get_files_in_site(
-                    site_id=site_id,
-                    drive_id=drive_id,
-                    folder_path=folder_path,
-                    minutes_ago=minutes_ago,
-                    file_formats=file_formats,
-                )
-            )
-            if not files:
-                logger.error("No files found in the site's drive")
-                return None
-            
-            file_contents = []
-            for file in files:
-                file_name = file.get("name")
+    def _get_site_and_drive_ids(self, site_domain: str, site_name: str) -> (Optional[str], Optional[str]):
+        """
+        Retrieves the site ID and drive ID for a given site domain and site name.
+
+        :param site_domain: The domain of the site.
+        :param site_name: The name of the site.
+        :return: A tuple containing the site ID and drive ID, or (None, None) if either ID could not be retrieved.
+        """
+        site_id = self.get_site_id(site_domain, site_name)
+        if not site_id:
+            logger.error("Failed to retrieve site_id")
+            return None, None
+
+        drive_id = self.get_drive_id(site_id)
+        if not drive_id:
+            logger.error("Failed to retrieve drive ID")
+            return None, None
+
+        return site_id, drive_id
+
+    def _get_files(self, site_id: str, drive_id: str, folder_path: Optional[str], minutes_ago: Optional[int], file_formats: Optional[List[str]], specific_file: Optional[str]) -> List[Dict]:
+        """
+        Retrieves the files in a site drive.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :param drive_id: The drive ID in Microsoft Graph.
+        :param folder_path: Optional path to the folder within the drive, can include subfolders.
+        :param minutes_ago: Optional integer to filter files created or updated within the specified number of minutes from now.
+        :param file_formats: List of desired file formats.
+        :param specific_file: Optional specific file to retrieve.
+        :return: A list of file details.
+        """
+        files = self.get_files_in_site(
+            site_id=site_id,
+            drive_id=drive_id,
+            folder_path=folder_path,
+            minutes_ago=minutes_ago,
+            file_formats=file_formats,
+        )
+        return files
+
+    def _process_files(self, site_id: str, drive_id: str, folder_path: Optional[str], files: List[Dict], file_formats: Optional[List[str]]) -> List[Dict[str, Optional[str]]]: 
+        """Processes the files in a site drive.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :param drive_id: The drive ID in Microsoft Graph.
+        :param folder_path: Optional path to the folder within the drive, can include subfolders.
+        :param files: List of files to process.
+        :param file_formats: List of desired file formats.
+        :return: A dictionary mapping file names to their content and metadata.
+        """
+        file_contents = []
+        for file in files:
+            file_name = file.get("name")
+            if file_name and self._is_file_format_valid(file_name, file_formats):
                 metadata = self._extract_file_metadata(file)
-                if file_name and '.' in file_name and (
-                    not file_formats or any(file_name.endswith(f".{fmt}") for fmt in file_formats)
-                    ):
-                    content = None
-                    if file_name.endswith(".docx"):
-                        content = self.process_and_retrieve_docx_content(site_id, drive_id, folder_path, file_name)
-                    elif file_name.endswith(".pdf"):
-                        # TODO: Implement PDF content extraction
-                        pass
-                    users_by_role = self.group_users_by_role(
-                        self.get_file_permissions(
-                            site_id, file["id"]
-                        )
-                    )
-                    sec_group = SecurityGroupManager().get_highest_priority_group(
-                        users_by_role
-                    )
-                    file_content = {
-                        "page_content": content,
-                        "metadata": {
-                            "source": metadata["webUrl"],
-                            "file_name": file_name,
-                            "size": metadata["size"],
-                            "created_by": metadata["createdBy"],
-                            "created_datetime": metadata["createdDateTime"],
-                            "last_modified_datetime": metadata["lastModifiedDateTime"],
-                            "last_modified_by": metadata["lastModifiedBy"],
-                            "read_access_group": users_by_role,
-                            "security_group": sec_group,
-                        },
-                    }
-                    file_contents.append(file_content)
-            return file_contents
-        except Exception as e:
-            logger.error(f"Error in retrieve_sharepoint_files_content function: {e}")
-            return None
-        
+                content = self._retrieve_file_content(site_id, drive_id, folder_path, file_name)
+                users_by_role = self.group_users_by_role(self.get_file_permissions(site_id, file["id"]))
+                sec_group = SecurityGroupManager().get_highest_priority_group(users_by_role)
+                
+                file_content = {
+                    "page_content": content,
+                    "metadata": self._format_metadata(metadata, file_name, users_by_role, sec_group),
+                }
+                file_contents.append(file_content)
+        return file_contents
 
+    def _is_file_format_valid(self, file_name: str, file_formats: Optional[List[str]]) -> bool:
+        """
+        Checks if the format of a file is valid.
+
+        :param file_name: The name of the file.
+        :param file_formats: List of desired file formats.
+        :return: True if the file format is valid, False otherwise.
+        """
+        return '.' in file_name and (not file_formats or any(file_name.endswith(f".{fmt}") for fmt in file_formats))
    
+    def _retrieve_file_content(self, site_id: str, drive_id: str, folder_path: Optional[str], file_name: str) -> Optional[str]:
+        """
+        Retrieve the content of a specific file from SharePoint.
+
+        :param site_id: SharePoint site ID.
+        :param drive_id: SharePoint drive ID.
+        :param folder_path: Path to the folder containing the file.
+        :param file_name: Name of the file to retrieve.
+        :return: Content of the file as a string, or None if retrieval fails.
+        """
+        if file_name.endswith(".docx"):
+            return self.process_and_retrieve_docx_content(site_id, drive_id, folder_path, file_name)
+        elif file_name.endswith(".pdf"):
+            return self.process_and_retrieve_pdf_content(site_id, drive_id, folder_path, file_name)
+        # Add other file type processing as needed
+        return None
+
+    def _format_metadata(self, metadata: Dict, file_name:str, users_by_role: Dict, sec_group: str) -> Dict:
+        """
+        Format and return file metadata.
+
+        :param metadata: Dictionary of file metadata.
+        :param file_name: Name of the file.
+        :param users_by_role: Dictionary of users grouped by their role.
+        :param sec_group: Security group associated with the file.
+        :return: Formatted metadata as a dictionary.
+        """
+        return {
+            "source": metadata["webUrl"],
+            "file_name": file_name,
+            "size": metadata["size"],
+            "created_by": metadata["createdBy"],
+            "created_datetime": metadata["createdDateTime"],
+            "last_modified_datetime": metadata["lastModifiedDateTime"],
+            "last_modified_by": metadata["lastModifiedBy"],
+            "read_access_group": users_by_role,
+            "security_group": sec_group,
+        }
