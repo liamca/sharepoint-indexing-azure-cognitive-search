@@ -1,14 +1,86 @@
 # How to Index Sharepoint Online Content to Azure Cognitive Search
 
-This repository outlines how to use the [SharePoint / Microsoft Graph REST API](https://learn.microsoft.com/en-us/sharepoint/dev/apis/sharepoint-rest-graph) to index content directly from SharePoint online to Azure Cognitive Search. 
+This notebook demonstrates the integration of the SharePoint / Microsoft Graph REST API for indexing content directly from SharePoint Online into Azure AI Search.
 
-This API was chosen because it allow near real time access to content that has changed in SharePoint online and also has the ability to efficiently tell when documents have changed and can provide user access information on the content which can be useful for performing [security trimming of search results](https://learn.microsoft.com/en-us/azure/search/search-security-trimming-for-azure-search).
+We have created the SharePointDataExtractor class based on the principle of dependency injection to simplify and abstract the complexity involved in the process of indexing content from SharePoint to Azure AI Search. This approach streamlines the handling of [security trimming](https://learn.microsoft.com/en-us/azure/search/search-security-trimming-for-azure-search) and efficient content updates. It is particularly beneficial for applications that require real-time data synchronization and secure data access.
+
+For more detailed information on using the SharePoint / Microsoft Graph REST API, refer to the official documentation [here](https://learn.microsoft.com/en-us/sharepoint/dev/apis/sharepoint-rest-graph).
+
+## 💡 Solution
+
+> 📌 **Note**
+>
+> For a comprehensive example, please refer to the [Indexing Content Notebook](03-indexing-content.ipynb).
+
+### SharePointDataExtractor Class
+
+The `SharePointDataExtractor` class, located in the `src/gbb_ai/sharepoint_data_extractor.py` module, is designed to simplify and optimize the process of extracting data from SharePoint using the Microsoft Graph API. It provides efficient mechanisms for authentication and data retrieval from SharePoint sites.
+
+```python
+from gbb_ai.sharepoint_data_extractor import SharePointDataExtractor
+
+# Instantiate the SharePointDataExtractor client
+client_extractor = SharePointDataExtractor()
+```
+
+### Key Functionality
+
+1. **Client Initialization**: Ensures authentication and authorization in a few lines of code. The extractor is easily set up with necessary parameters such as tenant ID, client ID, and client secret for authentication and API access. It utilizes MSAL for Python to manage secure access tokens. Environment variables can be conveniently loaded from a `.env` file for further configuration.
+
+```python
+client_extractor.load_environment_variables_from_env_file()
+client_extractor.msgraph_auth()
+```
+
+2. **Data Retrieval**: 
+   - Retrieves Site and Drive IDs from SharePoint.
+   - Fetches files from SharePoint drives, with optional filters for modification time and file formats.
+   - Gets permissions for each file for security trimming purposes.
+
+3. **Content Processing**: 
+   - Extracts text content from `.docx` and `.pdf` files.
+   - Retrieves and processes file content from SharePoint drives.
+
+4. **Metadata Extraction**: Extracts and formats metadata from SharePoint files, including web URLs, size, creation, and modification details.
+
+```python
+
+# Use the `retrieve_sharepoint_files_content` method to fetch file content and metadata from SharePoint
+files = client_extractor.retrieve_sharepoint_files_content(site_domain=SITE_DOMAIN, site_name=SITE_NAME, folder_path="/test/test2/test3/", minutes_ago=60)
+
+# The method returns a list of dictionaries, where each dictionary represents a file.
+# Each dictionary contains two keys: 'page_content' and 'metadata'.
+# 'page_content' contains the text content of the file.
+# 'metadata' contains a dictionary with metadata about the file, such as its source URL, name, size, creation and modification details, access groups, and security group.
+
+# Here's an example of the output:
+[
+    {
+        'page_content': 'A os suggested that LLM creators should exclude from their training data papers on creating or enhancing pathogens.[95]\n',
+        'metadata': {
+            'source': 'https://XXX.sharepoint.com/sites/XXX/_layouts/15/Doc.aspx?sourcedoc=%7B854539DD-C0C9-4C63-8358-8144B22476FC%7D&file=test3.docx&action=default&mobileredirect=true',
+            'file_name': 'test3.docx',
+            'size': 73576,
+            'created_by': 'System Administrator',
+            'created_datetime': '2023-12-15T00:44:01',
+            'last_modified_datetime': '2023-12-15T00:44:15',
+            'last_modified_by': 'System Administrator',
+            'read_access_group': {
+                'owner': ['Contoso Owners', 'Contoso Owners'],
+                'read': ['Contoso Visitors'],
+                'write': ['Contoso Members']
+            },
+            'security_group': 'Group_critical'
+        }
+    },
+    # ... more file data ...
+]
+```
 
 ## Requirements
 
 - <b>SharePoint Online Site</b>: For the Microsoft Graph REST API to be able to access your content, you will need to provide access to this REST API which will included granting [admin consent](https://learn.microsoft.com/en-us/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python). Optionally, if you are a Microsoft Partner or Microsoft Employee, you can also create a demo SharePoint online site from [https://cdx.transform.microsoft.com/](https://cdx.transform.microsoft.com/). To become part of the Microsoft Partner Program, please [visit here](https://partner.microsoft.com/dashboard/account/v3/enrollment/introduction/partnership). 
-- <b>Azure Cognitive Search Service</b>: The content will be indexed into an Azure Cognitive Search service. You can learn more about how to get [started here](https://learn.microsoft.com/azure/search/search-what-is-azure-search).
-- <b>Python v3+ Client with Jupyter Notebook</b>: This walkthrough leverages Jupyter Notebooks to perform the tasks of indexing the content.
+- <b>Azure AI Search Service</b>: The content will be indexed into an Azure Cognitive Search service. You can learn more about how to get [started here](https://learn.microsoft.com/azure/search/search-what-is-azure-search).
 
 ## Configuring Access for Microsoft Graph REST API
 
@@ -21,7 +93,7 @@ As outlined in this document, to register your application and add the app's reg
 - If you have access to multiple tenants, use the Directories + subscriptions filter  in the top menu to switch to the tenant in which you want to register the application.
 - Search for and select Azure Active Directory.
 - Under Manage, select App registrations > New registration.
-- Enter a Name for your application, for example <code>sharepoint-cog-search-indexing</code>. Users of your app might see this name, and you can change it later.
+- Enter a Name for your application, for example <code>sharepoint-ai-search-indexing</code>. Users of your app might see this name, and you can change it later.
 - Select Register.
 - Under Manage, select Certificates & secrets.
 - Under Client secrets, select New client secret, enter a name, and then select Add. Record the value which will be the "Client Secret" in a safe location for use in a later step. NOTE: Do no copy the "Secredt ID" as this is not needed.
@@ -31,12 +103,34 @@ As outlined in this document, to register your application and add the app's reg
 - If you notice that "Grant Admin Consent" is required, enable this now. Make sure all permissions have been granted admin consent. If you require an Admin, please see this [document](https://learn.microsoft.com/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python) for additional help.
 - Click "Overview" and copy the "Application (client) ID" as well as the "Directory (tenant) ID"
 
-## Edit Config
+## Configuration Env variables
 
-Open the config.json and update the following:
+We will now use environment variables to store our configuration. This is a more secure practice as it prevents sensitive data from being accidentally committed and pushed to version control systems.
 
-* Update "authority" with the "Tenant Id" from the previous section. For example:  https://login.microsoftonline.com/0cd1a308-e7c6-48f6-a77e-31770e80bccd
-* Update the client_id with the Application (client) ID from the previous section
-* Update the secret with the Secret Value from the preview section
+Create a `.env` file in your project root and add the following variables:
 
-Save the config.json file
+```env
+# Azure Active Directory Configuration
+TENANT_ID='[Your Azure Tenant ID]'
+CLIENT_ID='[Your Azure Client ID]'
+CLIENT_SECRET='[Your Azure Client Secret]'
+
+# SharePoint Site Configuration
+SITE_DOMAIN='[Your SharePoint Site Domain]'
+SITE_NAME='[Your SharePoint Site Name]'
+
+# Azure AI Search Service Configuration
+SEARCH_SERVICE_ENDPOINT='[Your Azure Search Service Endpoint]'
+SEARCH_INDEX_NAME='[Your Azure Search Index Name]'
+SEARCH_ADMIN_API_KEY='[Your Azure Search Admin API Key]'
+```
+
+Replace the placeholders (e.g., [Your Azure Tenant ID]) with your actual values.
+
++ `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET` are used for authentication with Azure Active Directory.
+- `SITE_DOMAIN` and `SITE_NAME` specify the SharePoint site from which data will be extracted.
++ `SEARCH_SERVICE_ENDPOINT`, `SEARCH_INDEX_NAME`, and `SEARCH_ADMIN_API_KEY` are used to configure the Azure AI Search service.
+
+> 📌 **Note**
+> Remember not to commit the .env file to your version control system. Add it to your .gitignore file to prevent it from being tracked.
+

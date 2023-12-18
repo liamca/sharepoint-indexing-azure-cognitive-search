@@ -309,36 +309,47 @@ class SharePointDataExtractor:
             raise
 
     @staticmethod
-    def group_users_by_role(user_data: List[Dict]) -> Dict[str, List[str]]:
+    def get_read_access_entities(permissions):
         """
-        Group users by their roles and return a dictionary representing this grouping.
+        Extracts user IDs and group names of entities with read access from the given permissions data.
 
-        This function takes a list of user data dictionaries, each containing user roles, and other attributes.
-        It returns a dictionary where the keys are roles and the values are lists of user display names corresponding to each role.
-
-        :param user_data: List of dictionaries containing user data.
-        :return: Dictionary representing users grouped by their roles.
-        :raises DataError: If there are issues with data processing.
+        :param permissions: List of permission dictionaries.
+        :return: List of entities (user IDs and group names/IDs) with read access.
         """
-        try:
-            grouped_users = {}
-            for user in user_data:
-                roles = user.get("roles", [])
-                display_name = (
-                    user.get("grantedTo", {}).get("user", {}).get("displayName")
-                    or user.get("grantedToV2", {})
-                    .get("siteGroup", {})
-                    .get("displayName")
-                    or user.get("grantedToV2", {}).get("group", {}).get("displayName")
-                )
+        read_access_entities = []
 
-                for role in roles:
-                    grouped_users.setdefault(role, []).append(display_name)
+        for permission in permissions:
+            if not isinstance(permission, dict) or "roles" not in permission:
+                continue
 
-            return grouped_users
-        except Exception as e:
-            logger.error(f"Error processing user data: {e}")
-            raise
+            if "read" in permission.get("roles", []):
+                # Process grantedToIdentitiesV2 for individual users
+                identities_v2 = permission.get("grantedToIdentitiesV2", [])
+                for identity in identities_v2:
+                    user = identity.get("user", {})
+                    user_id = user.get("id")
+                    if user_id and user_id not in read_access_entities:
+                        read_access_entities.append(user_id)
+
+                # Process grantedToIdentities for individual users
+                identities = permission.get("grantedToIdentities", [])
+                for identity in identities:
+                    user = identity.get("user", {})
+                    user_id = user.get("id")
+                    if user_id and user_id not in read_access_entities:
+                        read_access_entities.append(user_id)
+
+                # Process grantedToV2 for groups
+                groups = permission.get("grantedToV2", {}).get("siteGroup", {})
+                group_name = groups.get(
+                    "displayName"
+                )  # or groups.get('id') for group ID
+                if group_name and group_name not in read_access_entities:
+                    read_access_entities.append(group_name)
+
+        return read_access_entities[
+            0
+        ]  # FIXME: return list and makee ingestion with all elements
 
     def get_file_content_bytes(
         self,
@@ -468,20 +479,26 @@ class SharePointDataExtractor:
             Dict[str, Optional[Union[str, datetime]]]: A dictionary with the extracted file information.
             If a field is not present in the file data, the function will return None for that field.
         """
+
+        def format_date(date_str):
+            # Append 'Z' if it's missing to indicate UTC timezone
+            return date_str if date_str.endswith("Z") else f"{date_str}Z"
+
         return {
+            "id": file_data.get("id"),
             "webUrl": file_data.get("webUrl"),
             "size": file_data.get("size"),
             "createdBy": file_data.get("createdBy", {})
             .get("user", {})
             .get("displayName"),
-            "createdDateTime": file_data.get("fileSystemInfo", {})
-            .get("createdDateTime", "")
-            .rstrip("Z")
+            "createdDateTime": format_date(
+                file_data.get("fileSystemInfo", {}).get("createdDateTime", "")
+            )
             if file_data.get("fileSystemInfo", {}).get("createdDateTime")
             else None,
-            "lastModifiedDateTime": file_data.get("fileSystemInfo", {})
-            .get("lastModifiedDateTime", "")
-            .rstrip("Z")
+            "lastModifiedDateTime": format_date(
+                file_data.get("fileSystemInfo", {}).get("lastModifiedDateTime", "")
+            )
             if file_data.get("fileSystemInfo", {}).get("lastModifiedDateTime")
             else None,
             "lastModifiedBy": file_data.get("lastModifiedBy", {})
@@ -641,18 +658,14 @@ class SharePointDataExtractor:
                 content = self._retrieve_file_content(
                     site_id, drive_id, folder_path, file_name
                 )
-                users_by_role = self.group_users_by_role(
+                print(self.get_file_permissions(site_id, file["id"]))
+                users_by_role = self.get_read_access_entities(
                     self.get_file_permissions(site_id, file["id"])
                 )
-                sec_group = SecurityGroupManager().get_highest_priority_group(
-                    users_by_role
-                )
-
+                print(users_by_role)
                 file_content = {
-                    "page_content": content,
-                    "metadata": self._format_metadata(
-                        metadata, file_name, users_by_role, sec_group
-                    ),
+                    "content": content,
+                    **self._format_metadata(metadata, file_name, users_by_role),
                 }
                 file_contents.append(file_content)
 
@@ -697,7 +710,10 @@ class SharePointDataExtractor:
         return None
 
     def _format_metadata(
-        self, metadata: Dict, file_name: str, users_by_role: Dict, sec_group: str
+        self,
+        metadata: Dict,
+        file_name: str,
+        users_by_role: Dict,
     ) -> Dict:
         """
         Format and return file metadata.
@@ -705,17 +721,17 @@ class SharePointDataExtractor:
         :param metadata: Dictionary of file metadata.
         :param file_name: Name of the file.
         :param users_by_role: Dictionary of users grouped by their role.
-        :param sec_group: Security group associated with the file.
         :return: Formatted metadata as a dictionary.
         """
-        return {
+        formatted_metadata = {
+            "id": metadata["id"],
             "source": metadata["webUrl"],
-            "file_name": file_name,
+            "name": file_name,
             "size": metadata["size"],
             "created_by": metadata["createdBy"],
             "created_datetime": metadata["createdDateTime"],
             "last_modified_datetime": metadata["lastModifiedDateTime"],
             "last_modified_by": metadata["lastModifiedBy"],
             "read_access_group": users_by_role,
-            "security_group": sec_group,
         }
+        return formatted_metadata
