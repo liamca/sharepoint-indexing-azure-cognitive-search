@@ -10,7 +10,7 @@ For more detailed information on using the SharePoint / Microsoft Graph REST API
 
 > 📌 **Note**
 >
-> For a comprehensive example, please refer to the [Indexing Content Notebook](03-indexing-content.ipynb).
+> For a comprehensive example, please refer to the [Indexing Content Notebook](01-indexing-content-beta.ipynb).
 
 ### SharePointDataExtractor Class
 
@@ -49,29 +49,19 @@ client_extractor.msgraph_auth()
 files = client_extractor.retrieve_sharepoint_files_content(site_domain=SITE_DOMAIN, site_name=SITE_NAME, folder_path="/test/test2/test3/", minutes_ago=60)
 
 # The method returns a list of dictionaries, where each dictionary represents a file.
-# Each dictionary contains two keys: 'page_content' and 'metadata'.
-# 'page_content' contains the text content of the file.
-# 'metadata' contains a dictionary with metadata about the file, such as its source URL, name, size, creation and modification details, access groups, and security group.
-
-# Here's an example of the output:
+# Here's an example of the output `files`:
 [
     {
-        'page_content': 'A os suggested that LLM creators should exclude from their training data papers on creating or enhancing pathogens.[95]\n',
-        'metadata': {
-            'source': 'https://XXX.sharepoint.com/sites/XXX/_layouts/15/Doc.aspx?sourcedoc=%7B854539DD-C0C9-4C63-8358-8144B22476FC%7D&file=test3.docx&action=default&mobileredirect=true',
-            'file_name': 'test3.docx',
-            'size': 73576,
-            'created_by': 'System Administrator',
-            'created_datetime': '2023-12-15T00:44:01',
-            'last_modified_datetime': '2023-12-15T00:44:15',
-            'last_modified_by': 'System Administrator',
-            'read_access_group': {
-                'owner': ['Contoso Owners', 'Contoso Owners'],
-                'read': ['Contoso Visitors'],
-                'write': ['Contoso Members']
-            },
-            'security_group': 'Group_critical'
-        }
+        'content': 'LLM creators should exclude from their training data papers on creating or enhancing pathogens....',  # content
+        'id': '01W3WT6PG5HFCYLSOAMNGIGWEBISZCI5X4',  # The unique identifier of the file
+        'source': 'https://XXX.sharepoint.com/sites/XXX/_layouts/15/Doc.aspx?sourcedoc=%7B854539DD-C0C9-4C63-8358-8144B22476FC%7D&file=test3.docx&action=default&mobileredirect=true',  # The source URL of the file
+        'name': 'test3.docx',  # The name of the file
+        'size': 73576,  # The size of the file in bytes
+        'created_by': 'System Administrator',  # The user who created the file
+        'created_datetime': '2023-12-15T00:44:01Z',  # The date and time when the file was created
+        'last_modified_datetime': '2023-12-15T00:44:15Z',  # The date and time when the file was last modified
+        'last_modified_by': 'System Administrator',  # The user who last modified the file
+        'read_access_entity': 'Contoso Visitors'  # The entity that has read access to the file
     },
     # ... more file data ...
 ]

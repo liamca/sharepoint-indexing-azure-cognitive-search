@@ -658,11 +658,9 @@ class SharePointDataExtractor:
                 content = self._retrieve_file_content(
                     site_id, drive_id, folder_path, file_name
                 )
-                print(self.get_file_permissions(site_id, file["id"]))
                 users_by_role = self.get_read_access_entities(
                     self.get_file_permissions(site_id, file["id"])
                 )
-                print(users_by_role)
                 file_content = {
                     "content": content,
                     **self._format_metadata(metadata, file_name, users_by_role),
@@ -732,6 +730,6 @@ class SharePointDataExtractor:
             "created_datetime": metadata["createdDateTime"],
             "last_modified_datetime": metadata["lastModifiedDateTime"],
             "last_modified_by": metadata["lastModifiedBy"],
-            "read_access_group": users_by_role,
+            "read_access_entity": users_by_role,
         }
         return formatted_metadata
