@@ -16,6 +16,10 @@ For more detailed information on using the SharePoint / Microsoft Graph REST API
 
 The `SharePointDataExtractor` class, located in the `src/gbb_ai/sharepoint_data_extractor.py` module, is designed to simplify and optimize the process of extracting data from SharePoint using the Microsoft Graph API. It provides efficient mechanisms for authentication and data retrieval from SharePoint sites.
 
+> 📌 **Note**
+>
+> For a comprehensive example, please refer to the [Indexing Content Notebook](01-indexing-content-beta.ipynb).
+
 ```python
 from gbb_ai.sharepoint_data_extractor import SharePointDataExtractor
 
