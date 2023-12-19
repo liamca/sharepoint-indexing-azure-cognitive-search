@@ -83,16 +83,16 @@ As outlined in this document, to register your application and add the app's reg
 
 - Sign in to the [Azure portal](https://portal.azure.com/) as the Admin you copied from above/
 - If you have access to multiple tenants, use the Directories + subscriptions filter  in the top menu to switch to the tenant in which you want to register the application.
-- Search for and select Azure Active Directory.
+- Search for and select Microsoft Entra ID.
 - Under Manage, select App registrations > New registration.
 - Enter a Name for your application, for example <code>sharepoint-ai-search-indexing</code>. Users of your app might see this name, and you can change it later.
 - Select Register.
 - Under Manage, select Certificates & secrets.
-- Under Client secrets, select New client secret, enter a name, and then select Add. Record the value which will be the "Client Secret" in a safe location for use in a later step. NOTE: Do no copy the "Secredt ID" as this is not needed.
+- Under Client secrets, select New client secret, enter a name, and then select Add. Record the value which will be the "Client Secret" in a safe location for use in a later step. NOTE: Do not copy the "Secret ID" as this is not needed.
 - Under Manage, select API Permissions > Add a permission. Select Microsoft Graph.
 - Select Application permissions.
 - Under User node, select User.Read.All as well as Site.Read.All, then select Add permissions.
-- If you notice that "Grant Admin Consent" is required, enable this now. Make sure all permissions have been granted admin consent. If you require an Admin, please see this [document](https://learn.microsoft.com/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python) for additional help.
+- If you notice that "Grant Admin Consent" is required, enable this now. Make sure all permissions have been granted admin consent. If you require an Admin, please see this [document](https://learn.microsoft.com/en-us/entra/identity-platform/index-service?pivots=devlang-python) for additional help.
 - Click "Overview" and copy the "Application (client) ID" as well as the "Directory (tenant) ID"
 
 ## Configuration Env variables
@@ -102,7 +102,7 @@ We will now use environment variables to store our configuration. This is a more
 Create a `.env` file in your project root and add the following variables:
 
 ```env
-# Azure Active Directory Configuration
+# Microsoft Entra ID Configuration
 TENANT_ID='[Your Azure Tenant ID]'
 CLIENT_ID='[Your Azure Client ID]'
 CLIENT_SECRET='[Your Azure Client Secret]'

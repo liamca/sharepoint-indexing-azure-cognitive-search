@@ -345,9 +345,7 @@ class SharePointDataExtractor:
                 if group_name and group_name not in read_access_entities:
                     read_access_entities.append(group_name)
 
-        return read_access_entities[
-            0
-        ]  # FIXME: return list and makee ingestion with all elements
+        return read_access_entities
 
     def get_file_content_bytes(
         self,
