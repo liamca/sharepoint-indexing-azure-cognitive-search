@@ -1,0 +1,10 @@
+isort==5.9.3
+black==21.9b0
+flake8==3.9.2
+interrogate==1.4.0
+pre-commit==2.14.0
+ruff
+bandit
+pylint
+pytest
+pytest-cov
