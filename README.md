@@ -1,4 +1,6 @@
-# How to Index Sharepoint Online Content to Azure Cognitive Search
+# How to Index Sharepoint Online Content to Azure AI Search
+
+**Note** This repo is in beta stage and still being tested. Please report any issues you find so we can provide a complete approach for indexing content from SharePoint Online to Azure AI Search.
 
 This notebook demonstrates the integration of the SharePoint / Microsoft Graph REST API for indexing content directly from SharePoint Online into Azure AI Search.
 
@@ -72,7 +74,7 @@ files = client_extractor.retrieve_sharepoint_files_content(site_domain=SITE_DOMA
 ## Requirements
 
 - <b>SharePoint Online Site</b>: For the Microsoft Graph REST API to be able to access your content, you will need to provide access to this REST API which will included granting [admin consent](https://learn.microsoft.com/en-us/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python). Optionally, if you are a Microsoft Partner or Microsoft Employee, you can also create a demo SharePoint online site from [https://cdx.transform.microsoft.com/](https://cdx.transform.microsoft.com/). To become part of the Microsoft Partner Program, please [visit here](https://partner.microsoft.com/dashboard/account/v3/enrollment/introduction/partnership). 
-- <b>Azure AI Search Service</b>: The content will be indexed into an Azure Cognitive Search service. You can learn more about how to get [started here](https://learn.microsoft.com/azure/search/search-what-is-azure-search).
+- <b>Azure AI Search Service</b>: The content will be indexed into an Azure AI Search service. You can learn more about how to get [started here](https://learn.microsoft.com/azure/search/search-what-is-azure-search).
 
 ## Configuring Access for Microsoft Graph REST API
 
