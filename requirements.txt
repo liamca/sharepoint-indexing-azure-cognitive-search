@@ -10,3 +10,4 @@ langchain
 tiktoken
 PyPDF2
 openai==1.5.0
+tenacity
