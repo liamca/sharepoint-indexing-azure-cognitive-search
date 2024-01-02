@@ -9,3 +9,4 @@ openai==0.27.10
 langchain
 tiktoken
 PyPDF2
+openai==1.5.0
