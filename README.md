@@ -71,6 +71,10 @@ files = client_extractor.retrieve_sharepoint_files_content(site_domain=SITE_DOMA
 ]
 ```
 
+## Known limitations
+Currently this approach does not allow the following:
+- <b>Folder or File Filters</b>: This approach does not currently implement the ability to limit indexing to specific documents or folders within a SharePoint site. In the future, we will look into adding support for SharePoint embedded which does offer this level of access granularity.
+
 ## Requirements
 
 - <b>SharePoint Online Site</b>: For the Microsoft Graph REST API to be able to access your content, you will need to provide access to this REST API which will included granting [admin consent](https://learn.microsoft.com/en-us/azure/active-directory/develop/console-app-quickstart?pivots=devlang-python). Optionally, if you are a Microsoft Partner or Microsoft Employee, you can also create a demo SharePoint online site from [https://cdx.transform.microsoft.com/](https://cdx.transform.microsoft.com/). To become part of the Microsoft Partner Program, please [visit here](https://partner.microsoft.com/dashboard/account/v3/enrollment/introduction/partnership). 
