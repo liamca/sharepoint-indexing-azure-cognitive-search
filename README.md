@@ -50,7 +50,7 @@ client_extractor.msgraph_auth()
 ```python
 
 # Use the `retrieve_sharepoint_files_content` method to fetch file content and metadata from SharePoint
-files = client_extractor.retrieve_sharepoint_files_content(site_domain=SITE_DOMAIN, site_name=SITE_NAME, folder_path="/test/test2/test3/", minutes_ago=60)
+files = client_extractor.retrieve_sharepoint_files_content(site_hostname=SITE_HOSTNAME, site_name=SITE_NAME, folder_path="/test/test2/test3/", minutes_ago=60)
 
 # The method returns a list of dictionaries, where each dictionary represents a file.
 # Here's an example of the output `files`:
@@ -114,7 +114,7 @@ CLIENT_ID='[Your Azure Client ID]'
 CLIENT_SECRET='[Your Azure Client Secret]'
 
 # SharePoint Site Configuration
-SITE_DOMAIN='[Your SharePoint Site Domain]'
+SITE_HOSTNAME='[Your SharePoint Site Domain]'
 SITE_NAME='[Your SharePoint Site Name]'
 
 # Azure AI Search Service Configuration
@@ -126,7 +126,7 @@ SEARCH_ADMIN_API_KEY='[Your Azure Search Admin API Key]'
 Replace the placeholders (e.g., [Your Azure Tenant ID]) with your actual values.
 
 + `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET` are used for authentication with Azure Active Directory.
-- `SITE_DOMAIN` and `SITE_NAME` specify the SharePoint site from which data will be extracted.
+- `SITE_HOSTNAME` and `SITE_NAME` specify the SharePoint site from which data will be extracted.
 + `SEARCH_SERVICE_ENDPOINT`, `SEARCH_INDEX_NAME`, and `SEARCH_ADMIN_API_KEY` are used to configure the Azure AI Search service.
 
 > 📌 **Note**
