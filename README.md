@@ -8,7 +8,7 @@ We have created the SharePointDataExtractor class based on the principle of depe
 
 For more detailed information on using the SharePoint / Microsoft Graph REST API, refer to the official documentation [here](https://learn.microsoft.com/en-us/sharepoint/dev/apis/sharepoint-rest-graph).
 
-## 💡 Solution
+## 💡 Approach
 
 > 📌 **Note**
 >
