@@ -172,14 +172,37 @@ class SharePointDataExtractor:
             logger.error(f"Error in _make_ms_graph_request: {err}")
             raise
 
+    def get_org_sites( self, access_token: Optional[str] = None) -> Optional[str]:
+        """
+        Get a list of organization level sites from Microsoft Graph API.
+        """
+        endpoint = (
+            f"https://graph.microsoft.com/v1.0/sites/"
+        )
+        access_token = access_token or self.access_token
+
+        try:
+            logger.info("Getting a list of organization sites...")
+            result = self._make_ms_graph_request(endpoint, access_token)
+            sites = result.get("value")
+
+            for site in sites:
+                site_id = site.get("id")
+                if site_id:
+                    logger.info(f"Org site Id retrieved: {site_id}")
+                    return site_id
+        except Exception as err:
+            logger.error(f"Error retrieving org sites: {err}")
+            return None
+
     def get_site_id(
-        self, site_domain: str, site_name: str, access_token: Optional[str] = None
+        self, site_hostname: str, site_name: str, access_token: Optional[str] = None
     ) -> Optional[str]:
         """
         Get the Site ID from Microsoft Graph API.
         """
         endpoint = (
-            f"https://graph.microsoft.com/v1.0/sites/{site_domain}:/sites/{site_name}:/"
+            f"https://graph.microsoft.com/v1.0/sites/{site_hostname}:/sites/{site_name}:/"
         )
         access_token = access_token or self.access_token
 
@@ -504,7 +527,7 @@ class SharePointDataExtractor:
 
     def retrieve_sharepoint_files_content(
         self,
-        site_domain: str,
+        site_hostname: str,
         site_name: str,
         folder_path: Optional[str] = None,
         file_names: Optional[Union[str, List[str]]] = None,
@@ -514,7 +537,7 @@ class SharePointDataExtractor:
         """
         Retrieve contents of files from a specified SharePoint location, optionally filtering by last modification time and file formats.
 
-        :param site_domain: The domain of the site in Microsoft Graph.
+        :param site_hostname: The domain of the site in Microsoft Graph.
         :param site_name: The name of the site in Microsoft Graph.
         :param folder_path: Path to the folder within the drive, can include subfolders like 'test1/test2'.
         :param file_names: Optional; the name or names of specific files to retrieve. If provided, only these files' content will be fetched.
@@ -525,7 +548,7 @@ class SharePointDataExtractor:
         if self._are_required_variables_missing():
             return None
 
-        site_id, drive_id = self._get_site_and_drive_ids(site_domain, site_name)
+        site_id, drive_id = self._get_site_and_drive_ids(site_hostname, site_name)
         if not site_id or not drive_id:
             return None
 
@@ -566,16 +589,16 @@ class SharePointDataExtractor:
         return False
 
     def _get_site_and_drive_ids(
-        self, site_domain: str, site_name: str
+        self, site_hostname: str, site_name: str
     ) -> (Optional[str], Optional[str]):
         """
         Retrieves the site ID and drive ID for a given site domain and site name.
 
-        :param site_domain: The domain of the site.
+        :param site_hostname: The domain of the site.
         :param site_name: The name of the site.
         :return: A tuple containing the site ID and drive ID, or (None, None) if either ID could not be retrieved.
         """
-        site_id = self.get_site_id(site_domain, site_name)
+        site_id = self.get_site_id(site_hostname, site_name)
         if not site_id:
             logger.error("Failed to retrieve site_id")
             return None, None
