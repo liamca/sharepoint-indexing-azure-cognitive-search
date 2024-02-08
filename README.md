@@ -12,7 +12,7 @@ For more detailed information on using the SharePoint / Microsoft Graph REST API
 
 > 📌 **Note**
 >
-> For a comprehensive example, please refer to the [Indexing Content Notebook](01-indexing-content-beta.ipynb).
+> For a comprehensive example, please refer to the [Indexing Content Notebook](01-indexing-content.ipynb).
 
 ### SharePointDataExtractor Class
 
