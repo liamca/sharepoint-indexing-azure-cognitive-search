@@ -1,4 +1,4 @@
-# How to Index Sharepoint Online Content to Azure AI Search
+# How to Index SharePoint Online Content to Azure AI Search
 
 **Note** This repo is in beta stage and still being tested. Please report any issues you find so we can provide a complete approach for indexing content from SharePoint Online to Azure AI Search.
 
