@@ -729,3 +729,57 @@ class SharePointDataExtractor:
             "read_access_entity": users_by_role,
         }
         return formatted_metadata
+
+    def get_all_site_pages(self, site_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all the site pages from a given SharePoint site.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :return: A list of dictionaries containing information about each page.
+        """
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/pages"
+        try:
+            pages = self._make_ms_graph_request(url)
+            return pages.get("value", [])
+        except Exception as err:
+            logger.error(f"Error retrieving site pages: {err}")
+            return []
+
+    def _get_page_content(self, site_id: str, page_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the content of a specific site page using the page ID.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :param page_id: The ID of the page to retrieve content from.
+        :return: A dictionary containing the page content, including canvas layout.
+        """
+        url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/pages/{page_id}/microsoft.graph.sitePage?$expand=canvasLayout"
+        try:
+            page_content = self._make_ms_graph_request(url)
+            return page_content
+        except Exception as err:
+            logger.error(f"Error retrieving page content: {err}")
+            return None
+
+    def retrieve_and_process_site_pages(self, site_id: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all site pages and processes each page's content.
+
+        :param site_id: The site ID in Microsoft Graph.
+        :return: A list of processed pages with their content.
+        """
+        all_pages = self.get_all_site_pages(site_id)
+        processed_pages = []
+
+        for page in all_pages:
+            page_id = page.get("id")
+            if page_id:
+                page_content = self._get_page_content(site_id, page_id)
+                if page_content:
+                    # Here you can process the page content, e.g., chunking, etc.
+                    processed_pages.append({
+                        "page_id": page_id,
+                        "content": page_content
+                    })
+
+        return processed_pages

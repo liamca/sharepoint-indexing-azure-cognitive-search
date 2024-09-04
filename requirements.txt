@@ -2,12 +2,12 @@ requests>=2,<3
 msal>=0.6.1,<2
 python-docx
 python-dotenv
-#azure_search_documents==11.4.0b11
-azure-search-documents==11.4.0b8
+azure_search_documents==11.4.0b11
+#azure-search-documents==11.4.0b8
 azure-ai-formrecognizer
-openai==0.27.10
 langchain
 tiktoken
 PyPDF2
 openai==1.5.0
 tenacity
+bs4=0.0.2
